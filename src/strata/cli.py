@@ -5,8 +5,10 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 from strata.core.models import Message
 from strata.core.geo import get_geohash, get_epoch_string, generate_info_hash
 from strata.core.swarm import SwarmManager
+from strata.core.storage import StorageManager
 
 app = typer.Typer(help="Strata: Geographic P2P Swarms")
+storage = StorageManager()
 
 # Dummy key management for Hito 1
 def get_or_create_key():
@@ -39,10 +41,13 @@ def write(
     
     info_hash = generate_info_hash(geohash, epoch, anchored_to)
     
+    # Save to physical storage
+    path = storage.save_message(info_hash, msg)
+    
     typer.echo(f"🚀 Writing to {geohash} [Epoch: {epoch}]")
     typer.echo(f"📍 InfoHash: {info_hash}")
-    typer.echo(f"📝 Content: {content}")
-    typer.echo("✅ Message signed and ready for propagation.")
+    typer.echo(f"💾 Saved to: {path}")
+    typer.echo("✅ Message signed and saved for propagation.")
 
 @app.command()
 def read(
@@ -53,10 +58,22 @@ def read(
     """Reads messages from the local swarm for your current location."""
     geohash = get_geohash(lat, lon, precision)
     epoch = get_epoch_string()
+    info_hash = generate_info_hash(geohash, epoch)
     
-    typer.echo(f"🔍 Reading layers at {geohash}...")
-    # In Phase 1.3/1.4 integration, this would list files in the storage directory
-    typer.echo("(Storage scanning logic coming in next step...)")
+    typer.echo(f"🔍 Reading layers at {geohash} [InfoHash: {info_hash}]")
+    messages = storage.load_messages(info_hash)
+    
+    if not messages:
+        typer.echo("📭 No messages found here yet.")
+        return
+
+    for i, m in enumerate(messages):
+        time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(m.timestamp))
+        typer.echo(f"--- {i+1} ---")
+        typer.echo(f"🕒 {time_str}")
+        typer.echo(f"👤 {m.author_pk.hex()[:8]}...")
+        typer.echo(f"📝 {m.content}")
+        typer.echo("")
 
 @app.command()
 def node(
