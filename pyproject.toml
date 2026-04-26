@@ -1,0 +1,22 @@
+[project]
+name = "strata"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "cryptography>=47.0.0",
+    "libtorrent>=2.0.11",
+    "pygeohash>=3.2.2",
+    "pytest>=9.0.3",
+    "typer>=0.25.0",
+]
+
+[tool.uv]
+package = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+strata = "strata.cli:app"

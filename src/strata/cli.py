@@ -1,0 +1,89 @@
+import typer
+import time
+from typing import Optional
+from cryptography.hazmat.primitives.asymmetric import ed25519
+from strata.core.models import Message
+from strata.core.geo import get_geohash, get_epoch_string, generate_info_hash
+from strata.core.swarm import SwarmManager
+
+app = typer.Typer(help="Strata: Geographic P2P Swarms")
+
+# Dummy key management for Hito 1
+def get_or_create_key():
+    # In a real app, this would be stored in a secure file
+    priv = ed25519.Ed25519PrivateKey.generate()
+    pub = priv.public_key()
+    return priv, pub
+
+@app.command()
+def write(
+    content: str = typer.Argument(..., help="The message to leave on the wall"),
+    lat: float = typer.Option(..., help="Latitude"),
+    lon: float = typer.Option(..., help="Longitude"),
+    precision: int = typer.Option(7, help="Geohash precision"),
+    anchored_to: Optional[str] = typer.Option(None, help="Owner Public Key for anchored layers")
+):
+    """Leaves a digital trace at the specified location."""
+    priv, pub = get_or_create_key()
+    geohash = get_geohash(lat, lon, precision)
+    epoch = get_epoch_string()
+    
+    msg = Message(
+        author_pk=pub.public_bytes_raw(),
+        geohash=geohash,
+        content=content,
+        message_type="ANCHORED" if anchored_to else "PUBLIC",
+        owner_pk=bytes.fromhex(anchored_to) if anchored_to else None
+    )
+    msg.sign(priv)
+    
+    info_hash = generate_info_hash(geohash, epoch, anchored_to)
+    
+    typer.echo(f"🚀 Writing to {geohash} [Epoch: {epoch}]")
+    typer.echo(f"📍 InfoHash: {info_hash}")
+    typer.echo(f"📝 Content: {content}")
+    typer.echo("✅ Message signed and ready for propagation.")
+
+@app.command()
+def read(
+    lat: float = typer.Option(..., help="Latitude"),
+    lon: float = typer.Option(..., help="Longitude"),
+    precision: int = typer.Option(7, help="Geohash precision")
+):
+    """Reads messages from the local swarm for your current location."""
+    geohash = get_geohash(lat, lon, precision)
+    epoch = get_epoch_string()
+    
+    typer.echo(f"🔍 Reading layers at {geohash}...")
+    # In Phase 1.3/1.4 integration, this would list files in the storage directory
+    typer.echo("(Storage scanning logic coming in next step...)")
+
+@app.command()
+def node(
+    lat: float = typer.Option(..., help="Latitude"),
+    lon: float = typer.Option(..., help="Longitude"),
+    precision: int = typer.Option(7, help="Geohash precision")
+):
+    """Starts a Strata node to seed and sync messages for a location."""
+    geohash = get_geohash(lat, lon, precision)
+    epoch = get_epoch_string()
+    info_hash = generate_info_hash(geohash, epoch)
+    
+    swarm = SwarmManager()
+    handle = swarm.start_swarm(info_hash)
+    
+    typer.echo(f"🌐 Node active for {geohash}")
+    typer.echo(f"⚡ Seeding swarm: {info_hash}")
+    typer.echo("Press Ctrl+C to stop.")
+    
+    try:
+        while True:
+            s = handle.status()
+            typer.echo(f"Peers: {s.num_peers} | Down: {s.download_rate/1000:.1f}kB/s | Up: {s.upload_rate/1000:.1f}kB/s", err=True)
+            time.sleep(2)
+    except KeyboardInterrupt:
+        typer.echo("Shutting down node...")
+        swarm.stop_all()
+
+if __name__ == "__main__":
+    app()
