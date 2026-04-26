@@ -1,20 +1,26 @@
-# Tasks: Strata Prototype (Python)
+# Tasks: Strata - Hito 1 (The Swarm Motor)
 
-## Fase 1: El Núcleo del Metabolismo (Local)
-- [ ] **Modelado de Mensajes:** Crear la clase `Message` con firma criptográfica y metadatos.
-- [ ] **Gestor de Estratos (`EpochManager`):** Implementar la lógica de encadenamiento de Merkle (cada bloque de mensajes apunta al hash del anterior).
-- [ ] **Almacenamiento Local:** Implementar una caché simple que simule la "mochila" del usuario (SQLite o JSON).
+## Fase 1.1: El ADN del Mensaje (Estructura de Datos)
+- [ ] **Esquema Universal:** Definir el JSON del mensaje (autor, geohash, timestamp, contenido).
+- [ ] **Firmado Criptográfico:** Implementar la lógica de firma y verificación usando claves Ed25519.
+- [ ] **Validación de Ubicación:** Implementar la estructura para adjuntar pruebas de GPS (Hito 1) y Bluetooth (Hito 3).
 
-## Fase 2: El Enjambre (Networking)
-- [ ] **Simulador de Nodos:** Crear un script que levante múltiples instancias de `StrataNode` usando `asyncio`.
-- [ ] **Protocolo de Gossip:** Implementar el intercambio de mensajes entre nodos cercanos (simulando Bluetooth/LAN).
-- [ ] **Sincronización de Estratos:** Lógica para que un nodo nuevo descargue el historial "excavando" hacia atrás en el DAG.
+## Fase 1.2: Cartografía Digital (Geohash Mapping)
+- [ ] **Traductor de Coordenadas:** Función que convierta `lat, lon` en Geohash (usando precisión variable).
+- [ ] **Generador de InfoHash:** Lógica para derivar el `InfoHash` del Torrent a partir del `Geohash + Época + [OwnerKey]`.
+- [ ] **Capa Pública vs Anclada:** Implementar la lógica de resolución para ambos tipos de enjambres.
 
-## Fase 3: Ciudadanía e Ideas
-- [ ] **Módulo de Identidad:** Generación de claves de lugar y "atestaciones de presencia" (firmas ciegas).
-- [ ] **Anclaje de Ideas:** Lógica para etiquetar mensajes con conceptos y validar el derecho a hacerlo mediante el historial de presencia.
-- [ ] **El "Dial del Tiempo":** CLI o interfaz simple para saltar entre diferentes épocas (hashes) del historial.
+## Fase 1.3: El Motor P2P (BitTorrent Core)
+- [ ] **Integración de Cliente Torrent:** Seleccionar e implementar una librería P2P (ej: `libtorrent-python` o similar).
+- [ ] **Gestor de Directorios:** Lógica para mapear cada `InfoHash` a una carpeta local de mensajes `.msg`.
+- [ ] **Sincronización Oportunista:** Implementar el escaneo automático de nuevos archivos en el swarm.
 
-## Fase 4: Validación y Estrés
-- [ ] **Prueba de "Olvido Orgánico":** Simular qué pasa cuando todos los nodos dejan de seeder un estrato antiguo.
-- [ ] **Validación de Posts Remotos:** Implementar el desafío-respuesta para ciudadanos eternos que no están presentes.
+## Fase 1.4: La Interfaz CLI (Agnóstica)
+- [ ] **Comando `write`:** `strata write --place <geohash> --msg "texto"`.
+- [ ] **Comando `read`:** `strata read --place <geohash>` (lista mensajes ordenados por preponderancia).
+- [ ] **Simulador de "Mochila":** Gestión de la caché local y límites de almacenamiento (Metabolismo inicial).
+
+## Futuro: Hitos 2 y 3
+- [ ] (Hito 2) Implementar protocolo de Handshake social.
+- [ ] (Hito 3) Integración Bluetooth Low Energy (BLE) para PoP.
+- [ ] (Hito 3) Desarrollo de la interfaz móvil nativa.
