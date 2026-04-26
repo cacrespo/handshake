@@ -40,3 +40,27 @@ def test_geo_logic():
     
     ih3 = generate_info_hash("69y7p", "2024-05")
     assert ih1 != ih3
+
+def test_storage_manager(tmp_path):
+    from strata.core.storage import StorageManager
+    import os
+
+    # 1. Setup
+    storage = StorageManager(base_path=str(tmp_path))
+    info_hash = "test_info_hash"
+    
+    priv = ed25519.Ed25519PrivateKey.generate()
+    author_pk = priv.public_key().public_bytes_raw()
+    
+    msg = Message(author_pk=author_pk, geohash="6g3qc", content="Storage Test")
+    msg.sign(priv)
+
+    # 2. Save
+    path = storage.save_message(info_hash, msg)
+    assert os.path.exists(path)
+
+    # 3. Load and Verify
+    loaded_messages = storage.load_messages(info_hash)
+    assert len(loaded_messages) == 1
+    assert loaded_messages[0].content == "Storage Test"
+    assert loaded_messages[0].verify() is True
