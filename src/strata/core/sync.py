@@ -38,7 +38,7 @@ class SyncEngine:
 
     def _listen_loop(self):
         """Main loop for receiving UDP packets."""
-        # Separate socket for binding to the port
+        MAX_PACKET_SIZE = 8192 # 8KB limit
         listen_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         listen_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
@@ -51,7 +51,10 @@ class SyncEngine:
 
         while self.running:
             try:
-                data, addr = listen_sock.recvfrom(8192) # Larger buffer for message data
+                data, addr = listen_sock.recvfrom(MAX_PACKET_SIZE)
+                if len(data) > MAX_PACKET_SIZE:
+                    continue # Ignore oversized packets
+                
                 payload = json.loads(data.decode('utf-8'))
                 
                 msg_type = payload.get("type")

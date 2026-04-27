@@ -22,7 +22,7 @@ def test_handle_inventory_requests_missing(sync_engine, mock_storage):
     priv = ed25519.Ed25519PrivateKey.generate()
     msg_local = Message(author_pk=priv.public_key().public_bytes_raw(), geohash="abc", content="local")
     msg_local.sign(priv)
-    info_hash = "test_info_hash"
+    info_hash = "abcdef1234567890abcdef1234567890abcdef12"
     mock_storage.save_message(info_hash, msg_local)
     
     # 2. Simulate receiving an inventory with a NEW hash
@@ -40,7 +40,7 @@ def test_handle_request_sends_data(sync_engine, mock_storage):
     priv = ed25519.Ed25519PrivateKey.generate()
     msg = Message(author_pk=priv.public_key().public_bytes_raw(), geohash="abc", content="target")
     msg.sign(priv)
-    info_hash = "test_info_hash"
+    info_hash = "abcdef1234567890abcdef1234567890abcdef12"
     mock_storage.save_message(info_hash, msg)
     msg_hash = msg.signature.hex()[:16]
     
@@ -62,7 +62,7 @@ def test_handle_data_saves_valid_message(sync_engine, mock_storage):
     msg_data = msg.to_dict()
     msg_data["header"]["signature"] = msg.signature.hex()
     
-    info_hash = "test_info_hash"
+    info_hash = "abcdef1234567890abcdef1234567890abcdef12"
     sync_engine._handle_data(info_hash, msg_data)
     
     # Verify it was saved to storage

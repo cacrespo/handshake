@@ -47,7 +47,7 @@ def test_storage_manager(tmp_path):
 
     # 1. Setup
     storage = StorageManager(base_path=str(tmp_path))
-    info_hash = "test_info_hash"
+    info_hash = "abcdef1234567890abcdef1234567890abcdef12" # Valid hex
     
     priv = ed25519.Ed25519PrivateKey.generate()
     author_pk = priv.public_key().public_bytes_raw()
