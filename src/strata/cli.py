@@ -6,6 +6,7 @@ from strata.core.models import Message
 from strata.core.geo import get_geohash, get_epoch_string, generate_info_hash
 from strata.core.swarm import SwarmManager
 from strata.core.storage import StorageManager
+from strata.core.sync import SyncEngine
 
 app = typer.Typer(help="Strata: Geographic P2P Swarms")
 storage = StorageManager()
@@ -86,20 +87,28 @@ def node(
     epoch = get_epoch_string()
     info_hash = generate_info_hash(geohash, epoch)
     
+    # Start Swarm (Global P2P)
     swarm = SwarmManager()
     handle = swarm.start_swarm(info_hash)
     
+    # Start SyncEngine (Local Gossip)
+    sync = SyncEngine(storage)
+    sync.start()
+    
     typer.echo(f"🌐 Node active for {geohash}")
-    typer.echo(f"⚡ Seeding swarm: {info_hash}")
+    typer.echo(f"⚡ Global Seeding: {info_hash}")
+    typer.echo(f"📡 Local Sync: Active on port {sync.port}")
     typer.echo("Press Ctrl+C to stop.")
     
     try:
         while True:
             s = handle.status()
-            typer.echo(f"Peers: {s.num_peers} | Down: {s.download_rate/1000:.1f}kB/s | Up: {s.upload_rate/1000:.1f}kB/s", err=True)
-            time.sleep(2)
+            stats = f"Peers: {s.num_peers} | Down: {s.download_rate/1000:.1f}kB/s | Up: {s.upload_rate/1000:.1f}kB/s"
+            typer.echo(stats, err=True)
+            time.sleep(5)
     except KeyboardInterrupt:
-        typer.echo("Shutting down node...")
+        typer.echo("Shutting down...")
+        sync.stop()
         swarm.stop_all()
 
 if __name__ == "__main__":
