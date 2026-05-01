@@ -1,24 +1,23 @@
 import libtorrent as lt
-import time
 import os
-from typing import List
+
 
 class SwarmManager:
     """
     Manages BitTorrent swarms for specific Geohashes/Epochs.
     Uses libtorrent to handle P2P synchronization.
     """
-    def __init__(self, storage_path: str = "./storage"):
+
+    def __init__(self, storage_path: str = "./storage", p2p_port: int = 6881):
         self.storage_path = storage_path
         os.makedirs(self.storage_path, exist_ok=True)
-        
-        # Initialize libtorrent session
-        self.session = lt.session({
-            'listen_interfaces': '0.0.0.0:6881',
-            'enable_dht': True
-        })
-        
-        self.swarms = {} # info_hash -> torrent_handle
+
+        # Initialize libtorrent session with a specific port
+        self.session = lt.session(
+            {"listen_interfaces": f"0.0.0.0:{p2p_port}", "enable_dht": True}
+        )
+
+        self.swarms = {}  # info_hash -> torrent_handle
 
     def start_swarm(self, info_hash_hex: str):
         """
@@ -28,19 +27,20 @@ class SwarmManager:
         if info_hash_hex in self.swarms:
             return self.swarms[info_hash_hex]
 
-        # Convert hex string to sha1 hash
-        info_hash = lt.sha1_hash(bytes.fromhex(info_hash_hex))
-        
-        # Add torrent params
-        params = {
-            'save_path': os.path.join(self.storage_path, info_hash_hex),
-            'info_hash': info_hash,
-            'name': f"strata_{info_hash_hex[:8]}"
-        }
-        
+        # Convert hex string to bytes
+        info_hash_bytes = bytes.fromhex(info_hash_hex)
+
+        # In libtorrent 2.0+, it's safer to use add_torrent_params
+        params = lt.add_torrent_params()
+        params.save_path = os.path.abspath(
+            os.path.join(self.storage_path, info_hash_hex)
+        )
+        params.info_hash = lt.sha1_hash(info_hash_bytes)
+        params.name = f"strata_{info_hash_hex[:8]}"
+
         handle = self.session.add_torrent(params)
         self.swarms[info_hash_hex] = handle
-        
+
         # Force DHT lookup
         handle.force_reannounce()
         return handle
@@ -49,7 +49,7 @@ class SwarmManager:
         """Returns the current status of a swarm."""
         if info_hash_hex not in self.swarms:
             return None
-        
+
         handle = self.swarms[info_hash_hex]
         return handle.status()
 

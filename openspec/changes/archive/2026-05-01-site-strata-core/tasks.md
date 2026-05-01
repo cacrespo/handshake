@@ -14,13 +14,13 @@
 - [x] **Integración de Cliente Torrent:** Seleccionar e implementar una librería P2P (`libtorrent`).
 - [x] **Gestor de Directorios:** Lógica para mapear cada `InfoHash` a una carpeta local de mensajes `.msg`.
 - [x] **Local Gossip Sync:** Added `SyncEngine` for inventory exchange over UDP.
-- [ ] **Sincronización Oportunista:** Implementar el escaneo automático de nuevos archivos en el swarm (BitTorrent level).
+- [x] **Sincronización Oportunista:** Implementar el escaneo automático de nuevos archivos en el swarm (BitTorrent level).
 
 ## Fase 1.4: La Interfaz CLI (Agnóstica)
 - [x] **Comando `write`:** `strata write --place <geohash> --msg "texto"`.
 - [x] **Comando `read`:** `strata read --place <geohash>` (lists verified messages).
 - [x] **Comando `node`:** Starts global seeding and local gossip.
-- [ ] **Simulador de "Mochila":** Gestión de la caché local y límites de almacenamiento (Metabolismo inicial).
+- [x] **Simulador de "Mochila":** Gestión de la caché local y límites de almacenamiento (Metabolismo inicial).
 
 ## Futuro: Hitos 2 y 3
 - [ ] (Hito 2) Implementar protocolo de Handshake social.
