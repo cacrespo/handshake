@@ -4,11 +4,13 @@ from typing import Optional, Dict, Any
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.exceptions import InvalidSignature
 
+
 class Message:
     """
     Represents a single 'trace' or message in the Strata ecosystem.
     This is the 'DNA' of the system, designed to be serializable and verifiable.
     """
+
     def __init__(
         self,
         author_pk: bytes,
@@ -19,15 +21,15 @@ class Message:
         timestamp: Optional[float] = None,
         proof_type: str = "NONE",
         proof_data: Optional[str] = None,
-        signature: Optional[bytes] = None
+        signature: Optional[bytes] = None,
     ):
         self.author_pk = author_pk
         self.geohash = geohash
         self.content = content
-        self.message_type = message_type # PUBLIC or ANCHORED
+        self.message_type = message_type  # PUBLIC or ANCHORED
         self.owner_pk = owner_pk
         self.timestamp = timestamp or time.time()
-        self.proof_type = proof_type # NONE, GPS, BT
+        self.proof_type = proof_type  # NONE, GPS, BT
         self.proof_data = proof_data
         self.signature = signature
 
@@ -43,21 +45,16 @@ class Message:
             },
             "location": {
                 "geohash": self.geohash,
-                "proof": {
-                    "type": self.proof_type,
-                    "data": self.proof_data
-                }
+                "proof": {"type": self.proof_type, "data": self.proof_data},
             },
-            "content": {
-                "text": self.content
-            }
+            "content": {"text": self.content},
         }
 
     def get_signing_data(self) -> bytes:
         """Returns the canonical JSON representation for signing."""
         data = self.to_dict()
         # We sign the whole structure except the signature field itself
-        return json.dumps(data, sort_keys=True).encode('utf-8')
+        return json.dumps(data, sort_keys=True).encode("utf-8")
 
     def sign(self, private_key: ed25519.Ed25519PrivateKey):
         """Signs the message using the author's private key."""
