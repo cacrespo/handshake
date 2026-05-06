@@ -35,7 +35,7 @@ def test_handle_inventory_requests_missing(sync_engine, mock_storage):
 
     # We patch _send_request to see if it's called
     with patch.object(sync_engine, "_send_request") as mock_send_request:
-        sync_engine._handle_inventory("abc", remote_hashes, addr)
+        sync_engine._handle_inventory("abc", info_hash, remote_hashes, addr)
 
         # Success: It should have noticed "remote_hash_123" is missing and requested it
         mock_send_request.assert_called_once_with(info_hash, "remote_hash_123", addr)
