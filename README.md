@@ -33,8 +33,8 @@ graph TD
     CLI --> Engine[Strata Engine]
     
     subgraph "Engine Orchestration"
-        Engine --> Sync[Gossip Sync (Local)]
-        Engine --> Swarm[Swarm Manager (Global)]
+        Engine --> Sync[Gossip Sync Local]
+        Engine --> Swarm[Swarm Manager Global]
         Engine --> Storage[Storage Manager]
     end
     
