@@ -73,8 +73,10 @@ graph TD
 - [x] **Physical Persistence:** Automatically save .msg files to the torrent folder on write.
 - [x] **Archaeological Scan:** Implement read to scan and verify signatures of local messages.
 - [x] **Metabolism:** Simple TTL or storage limit for the local cache.
+- [x] **Unified Engine:** Gossip + BitTorrent transport abstraction.
 
 ### Hito 2: Social Layer
+- [x] **Identity Manager:** Persistent Ed25519 keys and Contact Book.
 - [ ] **Handshake Protocol:** Direct peer-to-peer key exchange.
 - [ ] **Social Relays:** Listen to distant boards via trusted contacts.
 
