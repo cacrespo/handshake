@@ -25,30 +25,30 @@ In the geographies where people talk**.
 
 Strata is the persistence engine of Handshake, allowing humans to leave permanent digital traces in physical locations. It treats the history of a place as a digital palimpsest: layers of messages (strata) that accumulate over time and whose survival depends on collective interest (seeding).
 
-## Current Architecture (Hito 1)
+## Current Architecture (Hito 1 - Refined)
 
 ```mermaid
 graph TD
     User((User)) --> CLI[Strata CLI]
-    CLI --> Model[Message Model]
-    CLI --> Geo[Geo Mapping]
-    CLI --> Swarm[Swarm Manager]
+    CLI --> Engine[Strata Engine]
     
-    subgraph "Core Components"
-        Model -->|Ed25519| Signing[Digital Signature]
-        Geo -->|pygeohash| Mapping[Geohash -> InfoHash]
-        Swarm -->|libtorrent| P2P[BitTorrent Swarm]
+    subgraph "Engine Orchestration"
+        Engine --> Sync[Gossip Sync Local]
+        Engine --> Swarm[Swarm Manager Global]
+        Engine --> Storage[Storage Manager]
     end
     
-    subgraph "Storage (Local Backpack)"
-        P2P <--> MsgFiles[.msg JSON files]
+    subgraph "Transports"
+        Sync ---|UDP/Gossip| LocalPeers[Local Neighbors]
+        Swarm ---|BitTorrent| GlobalPeers[Global Seeders]
     end
 ```
 
 ### Key Concepts
-- **Agnostic Engine:** Currently implemented as a Python CLI.
-- **Dual Layer:** Supports Public (anonymous) and Anchored (owned) layers.
-- **Geographic Swarms:** Every Geohash/Epoch combination is a unique BitTorrent InfoHash.
+- **Agnostic Engine:** The core logic is platform-independent. `StrataEngine` is a pure-logic component that can be embedded in CLI tools, mobile apps, or desktop clients.
+- **Unified Transport:** It transparently manages both local Gossip and global BitTorrent swarms.
+- **Transparent Sync:** The system automatically uses proximity for real-time interaction and swarms for historical persistence.
+- **Bridge Discovery:** Peers found on BitTorrent are automatically bridged to the Gossip network.
 
 ## How to use
 

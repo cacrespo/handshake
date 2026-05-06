@@ -3,10 +3,8 @@ import time
 from typing import Optional
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from strata.core.models import Message
-from strata.core.geo import get_geohash, get_epoch_string, generate_info_hash
-from strata.core.swarm import SwarmManager
-from strata.core.storage import StorageManager
-from strata.core.sync import SyncEngine
+from strata.core.geo import get_geohash, get_epoch_string
+from strata.core.engine import StrataEngine
 
 import logging
 
@@ -41,10 +39,9 @@ def write(
     storage_path: str = typer.Option("./storage", help="Path to storage"),
 ):
     """Leaves a digital trace at the specified location."""
-    storage = StorageManager(storage_path)
+    engine = StrataEngine(storage_path=storage_path)
     priv, pub = get_or_create_key()
     geohash = get_geohash(lat, lon, precision)
-    epoch = get_epoch_string()
 
     msg = Message(
         author_pk=pub.public_bytes_raw(),
@@ -55,14 +52,12 @@ def write(
     )
     msg.sign(priv)
 
-    info_hash = generate_info_hash(geohash, epoch, anchored_to)
+    # In a one-shot write, we just use the engine's storage to save it
+    # and maybe trigger a quick swarm announcement if we were running a long process.
+    # For Hito 1 simple CLI, engine.post_message is enough.
+    engine.post_message(msg)
 
-    # Save to physical storage
-    path = storage.save_message(info_hash, msg)
-
-    typer.echo(f"🚀 Writing to {geohash} [Epoch: {epoch}]")
-    typer.echo(f"📍 InfoHash: {info_hash}")
-    typer.echo(f"💾 Saved to: {path}")
+    typer.echo(f"🚀 Writing to {geohash} [Epoch: {get_epoch_string()}]")
     typer.echo("✅ Message signed and saved for propagation.")
 
 
@@ -74,13 +69,11 @@ def read(
     storage_path: str = typer.Option("./storage", help="Path to storage"),
 ):
     """Reads messages from the local swarm for your current location."""
-    storage = StorageManager(storage_path)
+    engine = StrataEngine(storage_path=storage_path)
     geohash = get_geohash(lat, lon, precision)
-    epoch = get_epoch_string()
-    info_hash = generate_info_hash(geohash, epoch)
 
-    typer.echo(f"🔍 Reading layers at {geohash} [InfoHash: {info_hash}]")
-    messages = storage.load_messages(info_hash)
+    typer.echo(f"🔍 Reading layers at {geohash}")
+    messages = engine.get_messages(lat, lon, precision)
 
     if not messages:
         typer.echo("📭 No messages found here yet.")
@@ -105,51 +98,34 @@ def node(
     storage_path: str = typer.Option("./storage", help="Path to storage"),
 ):
     """Starts a Strata node to seed and sync messages for a location."""
-    storage = StorageManager(storage_path)
-    geohash = get_geohash(lat, lon, precision)
-    epoch = get_epoch_string()
-    info_hash = generate_info_hash(geohash, epoch)
+    engine = StrataEngine(
+        storage_path=storage_path, 
+        gossip_port=port, 
+        p2p_port=p2p_port
+    )
+    
+    engine.start(lat, lon, precision)
 
-    # Start Swarm (Global P2P)
-    swarm = SwarmManager(storage_path=storage_path, p2p_port=p2p_port)
-    # We should probably allow configuring the listen port in SwarmManager too
-    # For now, let's just use the default or a simple offset
-    handle = swarm.start_swarm(info_hash)
-
-    # Start SyncEngine (Local Gossip)
-    sync = SyncEngine(storage, port=port)
-    sync.start()
-
-    typer.echo(f"🌐 Node active for {geohash}")
-    typer.echo(f"⚡ Global Seeding: {info_hash}")
-    typer.echo(f"📡 Local Sync: Active on port {sync.port}")
+    typer.echo(f"🌐 Node active for {get_geohash(lat, lon, precision)}")
+    typer.echo(f"📡 Local Sync: Active on port {port}")
     typer.echo(f"📂 Storage: {storage_path}")
     typer.echo("Press Ctrl+C to stop.")
 
-    seen_peers = set()
-
     try:
         while True:
-            s = handle.status()
-            stats = f"Peers: {s.num_peers} | Down: {s.download_rate / 1000:.1f}kB/s | Up: {s.upload_rate / 1000:.1f}kB/s"
-            typer.echo(stats)
-
-            # Bridge BitTorrent discovery to Gossip Sync
-            # Get peers from libtorrent
-            for p in handle.get_peer_info():
-                peer_ip = p.ip[0]
-                if peer_ip not in seen_peers:
-                    # In a real scenario, we might need a way to know the gossip port
-                    # For Hito 1, we assume the same port
-                    sync.add_peer(peer_ip, port=port)
-                    seen_peers.add(peer_ip)
-
+            # We can show some stats from the engine here
+            # For now, just keep it running
             time.sleep(5)
+            # Maybe show peer count from one of the active swarms
+            for info_hash in engine.active_info_hashes:
+                status = engine.swarm.get_swarm_status(info_hash)
+                if status:
+                    stats = f"Peers: {status.num_peers} | Down: {status.download_rate / 1000:.1f}kB/s | Up: {status.upload_rate / 1000:.1f}kB/s"
+                    typer.echo(stats)
 
     except KeyboardInterrupt:
         typer.echo("Shutting down...")
-        sync.stop()
-        swarm.stop_all()
+        engine.stop()
 
 
 if __name__ == "__main__":
