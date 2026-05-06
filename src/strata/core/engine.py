@@ -1,30 +1,36 @@
 import time
 import logging
 import threading
-from typing import Optional, List
+from typing import List
 from strata.core.storage import StorageManager
 from strata.core.swarm import SwarmManager
 from strata.core.sync import SyncEngine
 from strata.core.models import Message
 from strata.core.geo import get_geohash, get_epoch_string, generate_info_hash
+from strata.core.identity import IdentityManager, ContactBook
 
 logger = logging.getLogger("strata.engine")
+
 
 class StrataEngine:
     """
     The central orchestrator of the Strata node.
     It unifies Gossip (local) and BitTorrent (global) transports.
     """
+
     def __init__(
-        self, 
-        storage_path: str = "./storage", 
-        gossip_port: int = 6882, 
-        p2p_port: int = 6881
+        self,
+        storage_path: str = "./storage",
+        config_path: str = "~/.strata",
+        gossip_port: int = 6882,
+        p2p_port: int = 6881,
     ):
         self.storage = StorageManager(storage_path)
         self.swarm = SwarmManager(storage_path=storage_path, p2p_port=p2p_port)
         self.sync = SyncEngine(self.storage, port=gossip_port)
-        
+        self.identity = IdentityManager(config_path=config_path)
+        self.contacts = ContactBook(config_path=config_path)
+
         self.active_info_hashes = set()
         self.running = False
 
@@ -33,21 +39,21 @@ class StrataEngine:
         geohash = get_geohash(lat, lon, precision)
         epoch = get_epoch_string()
         info_hash = generate_info_hash(geohash, epoch)
-        
+
         self.active_info_hashes.add(info_hash)
-        
+
         # 1. Start Global Seeding (BitTorrent)
         self.swarm.start_swarm(info_hash)
-        
+
         # 2. Start Local Sync (Gossip)
         self.sync.start()
-        
+
         self.running = True
-        
+
         # 3. Start Bridge Thread
         self.bridge_thread = threading.Thread(target=self._bridge_loop, daemon=True)
         self.bridge_thread.start()
-        
+
         logger.info(f"StrataEngine active for {geohash} ({info_hash})")
 
     def _bridge_loop(self):

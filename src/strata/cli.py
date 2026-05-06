@@ -62,14 +62,69 @@ def write(
 
 
 @app.command()
+def handshake(
+    storage_path: str = typer.Option("./storage", help="Path to storage"),
+    config_path: str = typer.Option("~/.strata", help="Path to config/identity"),
+    port: int = typer.Option(6882, help="Gossip port"),
+):
+    """Broadcasts your signed identity to nearby peers to establish a contact."""
+    engine = StrataEngine(
+        storage_path=storage_path, config_path=config_path, gossip_port=port
+    )
+    pk_hex = engine.identity.get_public_key_hex()
+
+    typer.echo("🤝 Initiating signed handshake...")
+    typer.echo(f"🔑 Your Public Key: {pk_hex}")
+
+    engine.sync.send_handshake(engine.identity)
+    typer.echo("✅ Handshake broadcasted. Keep your node running to receive responses.")
+
+
+contact_app = typer.Typer(help="Manage your trusted contacts")
+app.add_typer(contact_app, name="contact")
+
+
+@contact_app.command("add")
+def contact_add(
+    public_key: str = typer.Argument(..., help="The public key of the contact"),
+    alias: str = typer.Argument(..., help="An alias for this contact"),
+    config_path: str = typer.Option("~/.strata", help="Path to config/identity"),
+):
+    """Adds a new contact to your contact book."""
+    from strata.core.identity import ContactBook
+
+    cb = ContactBook(config_path=config_path)
+    cb.add_contact(public_key, alias)
+    typer.echo(f"✅ Contact added: {alias} ({public_key[:8]})")
+
+
+@contact_app.command("list")
+def contact_list(
+    config_path: str = typer.Option("~/.strata", help="Path to config/identity"),
+):
+    """Lists all your trusted contacts."""
+    from strata.core.identity import ContactBook
+
+    cb = ContactBook(config_path=config_path)
+    if not cb.contacts:
+        typer.echo("📭 Your contact book is empty.")
+        return
+
+    typer.echo("👥 Trusted Contacts:")
+    for pk, alias in cb.contacts.items():
+        typer.echo(f"- {alias}: {pk}")
+
+
+@app.command()
 def read(
     lat: float = typer.Option(..., help="Latitude"),
     lon: float = typer.Option(..., help="Longitude"),
     precision: int = typer.Option(7, help="Geohash precision"),
     storage_path: str = typer.Option("./storage", help="Path to storage"),
+    config_path: str = typer.Option("~/.strata", help="Path to config/identity"),
 ):
     """Reads messages from the local swarm for your current location."""
-    engine = StrataEngine(storage_path=storage_path)
+    engine = StrataEngine(storage_path=storage_path, config_path=config_path)
     geohash = get_geohash(lat, lon, precision)
 
     typer.echo(f"🔍 Reading layers at {geohash}")
@@ -81,9 +136,16 @@ def read(
 
     for i, m in enumerate(messages):
         time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(m.timestamp))
+        author_alias = engine.contacts.get_alias(m.author_pk.hex())
+        author_display = (
+            f"{author_alias} ({m.author_pk.hex()[:8]})"
+            if author_alias
+            else f"{m.author_pk.hex()[:8]}..."
+        )
+
         typer.echo(f"--- {i + 1} ---")
         typer.echo(f"🕒 {time_str}")
-        typer.echo(f"👤 {m.author_pk.hex()[:8]}...")
+        typer.echo(f"👤 {author_display}")
         typer.echo(f"📝 {m.content}")
         typer.echo("")
 
@@ -96,14 +158,16 @@ def node(
     port: int = typer.Option(6882, help="Gossip port"),
     p2p_port: int = typer.Option(6881, help="P2P port"),
     storage_path: str = typer.Option("./storage", help="Path to storage"),
+    config_path: str = typer.Option("~/.strata", help="Path to config/identity"),
 ):
     """Starts a Strata node to seed and sync messages for a location."""
     engine = StrataEngine(
-        storage_path=storage_path, 
-        gossip_port=port, 
-        p2p_port=p2p_port
+        storage_path=storage_path,
+        config_path=config_path,
+        gossip_port=port,
+        p2p_port=p2p_port,
     )
-    
+
     engine.start(lat, lon, precision)
 
     typer.echo(f"🌐 Node active for {get_geohash(lat, lon, precision)}")
