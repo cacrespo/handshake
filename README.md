@@ -57,20 +57,34 @@ graph TD
 
 ## How to use
 
-1. **Setup:**
-   ```bash
-   uv sync
-   ```
+Ensure you have [uv](https://github.com/astral-sh/uv) installed, then run the commands directly with `uv run strata <command>`.
 
-2. **Leave a trace:**
-   ```bash
-   uv run strata write "Hello from the square!" --lat -34.60 --lon -58.38
-   ```
+### Commands
 
-3. **Start a node (Seed):**
-   ```bash
-   uv run strata node --lat -34.60 --lon -58.38
-   ```
+- **`node`**: Starts a P2P node for a specific location.
+  - Usage: `uv run strata node --lat 40.41 --lon -3.70`
+  - Purpose: Syncs messages for that location and acts as a relay for your distant boards.
+
+- **`write`**: Leaves a message on the board at your current location.
+  - Usage: `uv run strata write "Hello world" --lat 40.41 --lon -3.70`
+  - Purpose: Signs and broadcasts your message to the local swarm.
+
+- **`read`**: Reads messages from the swarm at your current location.
+  - Usage: `uv run strata read --lat 40.41 --lon -3.70`
+  - Purpose: Pulls history and displays messages, resolving author aliases if known.
+
+- **`handshake`**: Initiates a cryptographic handshake with peers.
+  - Usage: `uv run strata handshake`
+  - Purpose: Broadcasts your signed identity so others can add you as a trusted contact.
+
+- **`contact`**: Manage your trusted contacts.
+  - `add <pk> <alias>`: Saves a peer's public key as a trusted contact.
+  - `list`: Displays your current trust graph.
+
+- **`relay`**: Manage your persistent Social Relays.
+  - `add <geohash>`: Start persistently seeding a distant board.
+  - `list`: View the boards you are currently relaying.
+  - `remove <info_hash>`: Stop seeding a specific board.
 
 ## Next Steps
 
