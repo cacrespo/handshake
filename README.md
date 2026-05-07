@@ -36,12 +36,17 @@ graph TD
         Engine --> Sync[Gossip Sync Local]
         Engine --> Swarm[Swarm Manager Global]
         Engine --> Storage[Storage Manager]
+        Engine --> Identity[Identity & Contacts]
+        Engine --> Relay[Relay Manager]
     end
     
     subgraph "Transports"
         Sync ---|UDP/Gossip| LocalPeers[Local Neighbors]
         Swarm ---|BitTorrent| GlobalPeers[Global Seeders]
     end
+    
+    Identity -.->|Trust Link| Sync
+    Relay -->|Seeding| Swarm
 ```
 
 ### Key Concepts
