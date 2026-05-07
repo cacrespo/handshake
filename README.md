@@ -77,8 +77,8 @@ graph TD
 
 ### Hito 2: Social Layer
 - [x] **Identity Manager:** Persistent Ed25519 keys and Contact Book.
-- [ ] **Handshake Protocol:** Direct peer-to-peer key exchange.
-- [ ] **Social Relays:** Listen to distant boards via trusted contacts.
+- [x] **Handshake Protocol:** Direct peer-to-peer key exchange.
+- [x] **Social Relays:** Listen to distant boards via trusted contacts.
 
 ### Hito 3: Physical Presence
 - [ ] **Bluetooth PoP:** Certify presence via BLE beacons.
