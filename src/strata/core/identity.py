@@ -77,9 +77,10 @@ class ContactBook:
     Manages trusted contacts and their public keys.
     """
 
-    def __init__(self, config_path: str = "~/.strata"):
+    def __init__(self, config_path: str = "~/.strata", owner_label: str = "Unknown"):
         self.config_path = os.path.expanduser(config_path)
         self.contacts_file = os.path.join(self.config_path, "contacts.json")
+        self.owner_label = owner_label
         os.makedirs(self.config_path, exist_ok=True)
         self.contacts: Dict[str, str] = {}  # pk_hex -> alias
         self._load()
@@ -98,4 +99,8 @@ class ContactBook:
         self._save()
 
     def get_alias(self, public_key_hex: str) -> Optional[str]:
-        return self.contacts.get(public_key_hex)
+        alias = self.contacts.get(public_key_hex)
+        logger.debug(
+            f"[{self.owner_label}] Contact lookup: {public_key_hex[:8]} -> {alias}"
+        )
+        return alias

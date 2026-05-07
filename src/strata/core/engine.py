@@ -8,6 +8,7 @@ from strata.core.sync import SyncEngine
 from strata.core.models import Message
 from strata.core.geo import get_geohash, get_epoch_string, generate_info_hash
 from strata.core.identity import IdentityManager, ContactBook
+from strata.core.relay import RelayManager
 
 logger = logging.getLogger("strata.engine")
 
@@ -27,34 +28,76 @@ class StrataEngine:
     ):
         self.storage = StorageManager(storage_path)
         self.swarm = SwarmManager(storage_path=storage_path, p2p_port=p2p_port)
-        self.sync = SyncEngine(self.storage, port=gossip_port)
         self.identity = IdentityManager(config_path=config_path)
-        self.contacts = ContactBook(config_path=config_path)
+        self.contacts = ContactBook(
+            config_path=config_path, owner_label=self.identity.get_public_key_hex()[:8]
+        )
+        self.sync = SyncEngine(
+            self.storage,
+            port=gossip_port,
+            public_key_hex=self.identity.get_public_key_hex(),
+            contact_book=self.contacts,
+            on_discovery=self._on_peer_discovered,
+        )
+        self.relays = RelayManager(config_path=config_path)
 
         self.active_info_hashes = set()
         self.running = False
 
     def start(self, lat: float, lon: float, precision: int = 7):
-        """Starts the engine for a specific location."""
+        """Starts the engine for a specific location and all relayed swarms."""
         geohash = get_geohash(lat, lon, precision)
         epoch = get_epoch_string()
         info_hash = generate_info_hash(geohash, epoch)
 
         self.active_info_hashes.add(info_hash)
 
-        # 1. Start Global Seeding (BitTorrent)
+        # 1. Start Global Seeding for current location
         self.swarm.start_swarm(info_hash)
 
-        # 2. Start Local Sync (Gossip)
+        # 2. Start all Relay swarms
+        for r_hash in self.relays.relays:
+            if r_hash != info_hash:
+                self.swarm.start_swarm(r_hash)
+                self.active_info_hashes.add(r_hash)
+                logger.info(f"Started relay swarm: {r_hash}")
+
+        # 3. Start Local Sync (Gossip)
         self.sync.start()
 
         self.running = True
 
-        # 3. Start Bridge Thread
+        # 4. Start Bridge Thread
         self.bridge_thread = threading.Thread(target=self._bridge_loop, daemon=True)
         self.bridge_thread.start()
 
         logger.info(f"StrataEngine active for {geohash} ({info_hash})")
+
+    def start_relay(self, info_hash: str):
+        """Starts relaying a specific swarm and saves it."""
+        self.relays.add_relay(info_hash)
+        self.sync.relays = list(self.relays.relays)  # Update sync engine
+        if self.running:
+            self.swarm.start_swarm(info_hash)
+            self.active_info_hashes.add(info_hash)
+
+    def _on_peer_discovered(self, public_key: str, relays: List[str]):
+        """Callback for peer discovery events."""
+        logger.info(f"Peer discovered: {public_key[:8]} relaying {len(relays)} boards.")
+
+        # If this peer is in our contacts, automatically join their relays
+        alias = self.contacts.get_alias(public_key)
+        if alias:
+            logger.info(f"Trust Link: Verified contact alias '{alias}'")
+            for r_hash in relays:
+                if r_hash not in self.active_info_hashes:
+                    logger.info(
+                        f"Social Discovery: Joining relayed swarm {r_hash} from contact."
+                    )
+                    self.swarm.start_swarm(r_hash)
+                    self.active_info_hashes.add(r_hash)
+        else:
+            logger.debug(f"Peer {public_key[:8]} is not a trusted contact.")
 
     def _bridge_loop(self):
         """Periodically bridges BitTorrent discovery to Gossip."""

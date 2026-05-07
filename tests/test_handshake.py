@@ -2,6 +2,7 @@ import pytest
 import time
 import os
 import shutil
+import logging
 from strata.core.engine import StrataEngine
 
 
@@ -18,8 +19,9 @@ def clean_config():
             shutil.rmtree(path)
 
 
-def test_handshake_flow(clean_config, capsys):
+def test_handshake_flow(clean_config, caplog):
     config_alice, config_bob = clean_config
+    caplog.set_level(logging.INFO)
 
     # 1. Alice starts engine
     engine_alice = StrataEngine(config_path=config_alice, gossip_port=11001)
@@ -36,9 +38,11 @@ def test_handshake_flow(clean_config, capsys):
     # 4. Give Bob time to receive and process
     time.sleep(1)
 
-    # 5. Check Bob's output (captured by capsys)
-    captured = capsys.readouterr()
-    assert f"Validated Handshake received from {alice_pk[:8]}" in captured.out
+    # 5. Check Bob's logs
+    assert any(
+        f"Validated Handshake received from {alice_pk[:8]}" in record.message
+        for record in caplog.records
+    )
 
     # Cleanup
     engine_alice.stop()
