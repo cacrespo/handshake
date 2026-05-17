@@ -100,5 +100,6 @@ Ensure you have [uv](https://github.com/astral-sh/uv) installed, then run the co
 - [x] **Social Relays:** Listen to distant boards via trusted contacts.
 
 ### Hito 3: Physical Presence
-- [ ] **Bluetooth PoP:** Certify presence via BLE beacons.
-- [ ] **Mobile App:** Native experience with the "Time Dial" UI.
+- [x] **Design:** Presence Protocol with BLE-HAL and RSSI proximity filtering.
+- [ ] **BLE Integration:** Implement `PresenceManager` and BLE beacon broadcasting.
+- [ ] **Proximity UI:** Mobile implementation for discovery and handshake confirmation.
