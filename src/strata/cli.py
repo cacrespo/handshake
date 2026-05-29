@@ -165,6 +165,34 @@ def relay_remove(
 
 
 @app.command()
+def presence(
+    scan_time: int = typer.Option(5, help="How many seconds to scan for"),
+    storage_path: str = typer.Option("./storage", help="Path to storage"),
+    config_path: str = typer.Option("~/.strata", help="Path to config/identity"),
+):
+    """Scans for nearby verified peers using BLE."""
+    engine = StrataEngine(storage_path=storage_path, config_path=config_path)
+    
+    typer.echo(f"🔍 Scanning for physical presence ({scan_time}s)...")
+    engine.presence.start()
+    
+    try:
+        time.sleep(scan_time)
+        peers = engine.presence.get_nearby_peers()
+        
+        if not peers:
+            typer.echo("📭 No verified peers detected nearby.")
+            return
+
+        typer.echo(f"📍 Detected {len(peers)} verified peers:")
+        for p in peers:
+            typer.echo(f"- {p['alias']} ({p['pk_hex'][:8]}...)")
+            typer.echo(f"  Proximity: {p['proximity']} (RSSI: {p['rssi']})")
+    finally:
+        engine.presence.stop()
+
+
+@app.command()
 def read(
     lat: float = typer.Option(..., help="Latitude"),
     lon: float = typer.Option(..., help="Longitude"),
