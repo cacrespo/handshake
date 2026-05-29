@@ -9,6 +9,7 @@ from strata.core.models import Message
 from strata.core.geo import get_geohash, get_epoch_string, generate_info_hash
 from strata.core.identity import IdentityManager, ContactBook
 from strata.core.relay import RelayManager
+from strata.core.presence import PresenceManager
 
 logger = logging.getLogger("strata.engine")
 
@@ -40,6 +41,7 @@ class StrataEngine:
             on_discovery=self._on_peer_discovered,
         )
         self.relays = RelayManager(config_path=config_path)
+        self.presence = PresenceManager(self.identity, self.contacts)
 
         self.active_info_hashes = set()
         self.running = False
@@ -65,9 +67,12 @@ class StrataEngine:
         # 3. Start Local Sync (Gossip)
         self.sync.start()
 
+        # 4. Start Physical Presence (BLE)
+        self.presence.start()
+
         self.running = True
 
-        # 4. Start Bridge Thread
+        # 5. Start Bridge Thread
         self.bridge_thread = threading.Thread(target=self._bridge_loop, daemon=True)
         self.bridge_thread.start()
 
@@ -130,6 +135,7 @@ class StrataEngine:
         self.running = False
         self.sync.stop()
         self.swarm.stop_all()
+        self.presence.stop()
         logger.info("StrataEngine stopped")
 
     def bridge_discovery(self):

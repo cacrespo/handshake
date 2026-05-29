@@ -101,5 +101,5 @@ Ensure you have [uv](https://github.com/astral-sh/uv) installed, then run the co
 
 ### Hito 3: Physical Presence
 - [x] **Design:** Presence Protocol with BLE-HAL and RSSI proximity filtering.
-- [ ] **BLE Integration:** Implement `PresenceManager` and BLE beacon broadcasting.
+- [x] **BLE Integration:** Implement `PresenceManager` and BLE beacon broadcasting.
 - [ ] **Proximity UI:** Mobile implementation for discovery and handshake confirmation.
