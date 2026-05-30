@@ -96,8 +96,22 @@ Ensure you have [uv](https://github.com/astral-sh/uv) installed, then run the co
 
 ### Hito 2: Social Layer
 - [x] **Identity Manager:** Persistent Ed25519 keys and Contact Book.
-- [x] **Handshake Protocol:** Direct peer-to-peer key exchange.
+- [x] **Handshake Protocol:** Cryptographic peer-to-peer verification.
 - [x] **Social Relays:** Listen to distant boards via trusted contacts.
+
+---
+
+## Learnings & Architecture
+
+Detailed documentation on the principles behind Strata:
+
+1. [uv & Modern Python](docs/learnings/01-uv-python.md)
+2. [Sovereign Identity (Ed25519)](docs/learnings/02-ed25519-identity.md)
+3. [Geohashing & Swarms](docs/learnings/03-geohashing-swarms.md)
+4. [Contacts & Trust Graphs](docs/learnings/04-contact-trust-graphs.md)
+5. [Digital Metabolism & Storage](docs/learnings/05-metabolism-storage.md)
+6. [P2P Sync Protocol (Gossip)](docs/learnings/06-p2p-sync-protocol.md)
+
 
 ### Hito 3: Physical Presence
 - [x] **Design:** Presence Protocol with BLE-HAL and RSSI proximity filtering.

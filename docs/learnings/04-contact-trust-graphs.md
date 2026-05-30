@@ -17,10 +17,11 @@ By recognizing identities, we can build advanced features:
 - **Social Relays:** If a trusted contact (someone in your `ContactBook`) seeds a distant board, your node can prioritize syncing that data through them.
 - **Reputation:** We can filter or highlight messages from known contacts, creating a high-signal environment without centralized moderation.
 
-## 4. The Handshake Protocol (Work in Progress)
-A "Handshake" is the act of two peers exchanging their Public Keys. 
-- **Mechanism:** This can be done via QR codes, Bluetooth, or special P2P messages.
-- **Verification:** Once Alice has Bob's Public Key and assigns him an alias, she can verify that any future message claiming to be from "Bob" is authentic.
+## 4. The Handshake Protocol
+A "Handshake" is the act of two peers cryptographically verifying their identities.
+- **Mechanism:** In Milestone 2, this is implemented via UDP broadcast. A node sends a signed packet containing its Public Key and a current timestamp.
+- **Verification:** When a peer receives a handshake, they verify the signature using the provided Public Key.
+- **Contact Addition:** Once verified, the UI prompts the user to add the peer to their `ContactBook` with a friendly alias. This "links" the cryptographic identity to a human name.
 
 ---
-*Code Reference:* See `src/strata/core/identity.py` for identity management and `src/strata/core/engine.py` for its integration into the core.
+*Code Reference:* See `src/strata/core/identity.py` for identity management and `src/strata/core/sync.py` for the `HANDSHAKE` packet logic.
