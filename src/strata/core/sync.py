@@ -4,7 +4,7 @@ import threading
 import time
 import os
 import logging
-from typing import Set, Dict, Any, List
+from typing import Set, Dict, Any, Optional, List
 from strata.core.storage import StorageManager
 from strata.core.models import Message
 
@@ -12,10 +12,21 @@ logger = logging.getLogger("strata.sync")
 
 
 class SyncEngine:
-    def __init__(self, storage: StorageManager, port: int = 6882):
+    def __init__(
+        self,
+        storage: StorageManager,
+        port: int = 6882,
+        public_key_hex: str = "",
+        contact_book: Optional[Any] = None,
+        on_discovery: Optional[Any] = None,
+    ):
         self.storage = storage
         self.port = port
+        self.public_key_hex = public_key_hex
+        self.contacts = contact_book
+        self.on_discovery = on_discovery
         self.running = False
+        self.relays = []  # List of info_hashes we are relaying
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -58,7 +69,12 @@ class SyncEngine:
             ]
 
         if not swarms:
-            packet = {"type": "DISCOVER", "port": self.port}
+            packet = {
+                "type": "DISCOVER",
+                "public_key": self.public_key_hex,
+                "port": self.port,
+                "relays": self.relays,
+            }
             self.sock.sendto(json.dumps(packet).encode("utf-8"), (ip, port))
             return
 
@@ -69,10 +85,12 @@ class SyncEngine:
 
             packet = {
                 "type": "INVENTORY",
+                "public_key": self.public_key_hex,
                 "geohash": geohash,
                 "info_hash": info_hash,
                 "hashes": msg_hashes,
                 "port": self.port,
+                "relays": self.relays,
             }
             try:
                 self.sock.sendto(json.dumps(packet).encode("utf-8"), (ip, port))
@@ -99,7 +117,11 @@ class SyncEngine:
                 remote_addr = (addr[0], remote_port)
 
                 if msg_type == "DISCOVER":
-                    self._handle_discover(remote_addr)
+                    self._handle_discover(
+                        remote_addr,
+                        public_key=payload.get("public_key", ""),
+                        relays=payload.get("relays", []),
+                    )
                 elif msg_type == "HANDSHAKE":
                     self._handle_handshake(
                         payload["public_key"],
@@ -113,6 +135,8 @@ class SyncEngine:
                         payload["info_hash"],
                         set(payload["hashes"]),
                         remote_addr,
+                        public_key=payload.get("public_key", ""),
+                        relays=payload.get("relays", []),
                     )
                 elif msg_type == "REQUEST":
                     self._handle_request(
@@ -173,32 +197,59 @@ class SyncEngine:
             )
             return
 
-        # 2. Check for replay (optional but good for Hito 2)
+        # 2. Check for replay
         if abs(time.time() - timestamp) > 300:  # 5 minute window
             logger.warning(
                 f"Handshake from {public_key_hex[:8]} is too old or clock skew."
             )
             return
 
-        print(f"\n🤝 Validated Handshake received from {public_key_hex[:8]}!")
-        print(f"   Address: {addr[0]}")
-        print(f"   To add: strata contact add {public_key_hex} <alias>\n")
+        logger.info(f"Validated Handshake received from {public_key_hex[:8]}!")
 
-    def _handle_discover(self, addr):
-        logger.info(f"Received discovery from {addr}")
-        if not os.path.exists(self.storage.base_path):
-            return
+    def _handle_discover(self, addr, public_key: str = "", relays: List[str] = None):
+        logger.info(f"Received discovery from {addr}. PK: {public_key}")
 
-        for info_hash in os.listdir(self.storage.base_path):
-            full_path = os.path.join(self.storage.base_path, info_hash)
-            if not os.path.isdir(full_path):
-                continue
+        # Social Discovery Logic
+        if public_key and self.contacts:
+            alias = self.contacts.get_alias(public_key)
+            if alias:
+                logger.info(
+                    f"Trust Link: Connected to contact '{alias}' ({public_key[:8]})"
+                )
+                if relays:
+                    logger.info(
+                        f"Social Discovery: '{alias}' is relaying {len(relays)} distant boards."
+                    )
+
+        if self.on_discovery and public_key:
+            self.on_discovery(public_key, relays or [])
+
+        # Collect all swarms to announce: storage + relays
+        swarms_to_announce = set(self.relays)
+        if os.path.exists(self.storage.base_path):
+            swarms_to_announce.update(
+                [
+                    d
+                    for d in os.listdir(self.storage.base_path)
+                    if os.path.isdir(os.path.join(self.storage.base_path, d))
+                ]
+            )
+
+        for info_hash in swarms_to_announce:
             messages = self.storage.load_messages(info_hash)
-            if not messages:
-                continue
-
+            geohash = messages[0].geohash if messages else "unknown"
             local_hashes = [m.signature.hex()[:16] for m in messages if m.signature]
-            self._send_inventory(messages[0].geohash, info_hash, local_hashes, addr)
+
+            packet = {
+                "type": "INVENTORY",
+                "public_key": self.public_key_hex,
+                "geohash": geohash,
+                "info_hash": info_hash,
+                "hashes": local_hashes,
+                "port": self.port,
+                "relays": self.relays,
+            }
+            self.sock.sendto(json.dumps(packet).encode("utf-8"), addr)
 
     def _broadcast_loop(self):
         while self.running:
@@ -223,10 +274,12 @@ class SyncEngine:
 
                     packet = {
                         "type": "INVENTORY",
+                        "public_key": self.public_key_hex,
                         "geohash": geohash,
                         "info_hash": info_hash,
                         "hashes": msg_hashes,
                         "port": self.port,
+                        "relays": self.relays,
                     }
 
                     data = json.dumps(packet).encode("utf-8")
@@ -241,13 +294,35 @@ class SyncEngine:
             time.sleep(2)
 
     def _handle_inventory(
-        self, geohash: str, info_hash: str, remote_hashes: Set[str], addr
+        self,
+        geohash: str,
+        info_hash: str,
+        remote_hashes: Set[str],
+        addr,
+        public_key: str = "",
+        relays: List[str] = None,
     ):
         logger.info(
-            f"Received inventory for {info_hash} from {addr} ({len(remote_hashes)} hashes)"
+            f"Received inventory for {info_hash} from {addr} ({len(remote_hashes)} hashes). PK: {public_key}"
         )
 
+        # Social Discovery Logic
+        if self.on_discovery and public_key:
+            self.on_discovery(public_key, relays or [])
+
+        if public_key and self.contacts:
+            alias = self.contacts.get_alias(public_key)
+            if alias:
+                logger.info(
+                    f"Trust Link: Connected to contact '{alias}' ({public_key[:8]})"
+                )
+                if relays:
+                    logger.info(
+                        f"Social Discovery: '{alias}' is relaying {len(relays)} distant boards."
+                    )
+
         local_messages = self.storage.load_messages(info_hash)
+
         local_hashes = set(
             m.signature.hex()[:16] for m in local_messages if m.signature
         )
@@ -265,10 +340,12 @@ class SyncEngine:
     def _send_inventory(self, geohash: str, info_hash: str, hashes: List[str], addr):
         packet = {
             "type": "INVENTORY",
+            "public_key": self.public_key_hex,
             "geohash": geohash,
             "info_hash": info_hash,
             "hashes": hashes,
             "port": self.port,
+            "relays": self.relays,
         }
         self.sock.sendto(json.dumps(packet).encode("utf-8"), addr)
 

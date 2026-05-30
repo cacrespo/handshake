@@ -115,6 +115,83 @@ def contact_list(
         typer.echo(f"- {alias}: {pk}")
 
 
+relay_app = typer.Typer(help="Manage your social relays (persistent seeding)")
+app.add_typer(relay_app, name="relay")
+
+
+@relay_app.command("add")
+def relay_add(
+    geohash: str = typer.Argument(..., help="The geohash you want to relay"),
+    config_path: str = typer.Option("~/.strata", help="Path to config/identity"),
+):
+    """Adds a geohash to your persistent relay list."""
+    from strata.core.geo import get_epoch_string, generate_info_hash
+    from strata.core.relay import RelayManager
+
+    rm = RelayManager(config_path=config_path)
+    info_hash = generate_info_hash(geohash, get_epoch_string())
+    rm.add_relay(info_hash)
+    typer.echo(f"✅ Added relay for {geohash} (InfoHash: {info_hash[:8]}...)")
+
+
+@relay_app.command("list")
+def relay_list(
+    config_path: str = typer.Option("~/.strata", help="Path to config/identity"),
+):
+    """Lists all swarms you are currently relaying."""
+    from strata.core.relay import RelayManager
+
+    rm = RelayManager(config_path=config_path)
+    if not rm.relays:
+        typer.echo("📭 You are not relaying any boards yet.")
+        return
+
+    typer.echo("📡 Persistent Relays (InfoHashes):")
+    for r_hash in rm.relays:
+        typer.echo(f"- {r_hash}")
+
+
+@relay_app.command("remove")
+def relay_remove(
+    info_hash: str = typer.Argument(..., help="The InfoHash to stop relaying"),
+    config_path: str = typer.Option("~/.strata", help="Path to config/identity"),
+):
+    """Stops relaying a specific swarm."""
+    from strata.core.relay import RelayManager
+
+    rm = RelayManager(config_path=config_path)
+    rm.remove_relay(info_hash)
+    typer.echo(f"✅ Removed relay for {info_hash}")
+
+
+@app.command()
+def presence(
+    scan_time: int = typer.Option(5, help="How many seconds to scan for"),
+    storage_path: str = typer.Option("./storage", help="Path to storage"),
+    config_path: str = typer.Option("~/.strata", help="Path to config/identity"),
+):
+    """Scans for nearby verified peers using BLE."""
+    engine = StrataEngine(storage_path=storage_path, config_path=config_path)
+    
+    typer.echo(f"🔍 Scanning for physical presence ({scan_time}s)...")
+    engine.presence.start()
+    
+    try:
+        time.sleep(scan_time)
+        peers = engine.presence.get_nearby_peers()
+        
+        if not peers:
+            typer.echo("📭 No verified peers detected nearby.")
+            return
+
+        typer.echo(f"📍 Detected {len(peers)} verified peers:")
+        for p in peers:
+            typer.echo(f"- {p['alias']} ({p['pk_hex'][:8]}...)")
+            typer.echo(f"  Proximity: {p['proximity']} (RSSI: {p['rssi']})")
+    finally:
+        engine.presence.stop()
+
+
 @app.command()
 def read(
     lat: float = typer.Option(..., help="Latitude"),
