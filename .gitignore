@@ -209,3 +209,6 @@ storage/
 
 # OpenSpec (Private)
 openspec/
+
+# Gemini (Private)
+.gemini/
