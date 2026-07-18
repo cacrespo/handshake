@@ -1,4 +1,4 @@
-# Handshake: Space-Time Graffitis
+# Handshake: Space-Time Conexions
 
 ## The Vision
 **Handshake** is an exploration of keeping humans physically and temporally connected in a digital world. Instead of infinite scrolling feeds decided by algorithms, Handshake proposes a network of **digital graffitis anchored in exact physical coordinates and time**.
@@ -37,7 +37,7 @@ graph TD
 ### Key Components
 1. **Django (The Space-Time Tracker):** Django does not act as a centralized database for all messages. Instead, it acts as a BitTorrent Tracker. When you navigate to a coordinate on the map, Django connects you with other users (peers) exploring the same area.
 2. **Web Frontend (Vite/React + WebRTC):** Provides a rich, premium interface to navigate space and a time-slider to explore the past. Once Django connects you to peers, your browser downloads and seeds the graffitis directly from them via WebRTC.
-3. **Strata (The Agnostic Engine):** The pure-Python core logic (`src/strata`). It handles the validation, cryptographic rules, and data structures of the space-time graffitis, remaining independent of the web transport layer.
+3. **Strata (The Agnostic Engine):** The pure-Python core logic (`src/strata`). It handles the validation, cryptographic rules, and data structures of the space-time conexions, remaining independent of the web transport layer.
 
 ## Roadmap
 

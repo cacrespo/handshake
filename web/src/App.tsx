@@ -786,7 +786,7 @@ export default function App() {
         <div className="logo-container">
           <div>
             <div className="logo-text">Handshake</div>
-            <div className="subtitle">Space-Time Graffitis</div>
+            <div className="subtitle">Space-Time Conexions</div>
           </div>
         </div>
 
