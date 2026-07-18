@@ -1,119 +1,58 @@
-# Handshake
+# Handshake: Space-Time Graffitis
 
-This is an exploration: a way to think about keeping humans physically
-connected in a world where virtual interactions are becoming indistinguishable
-from reality. Instead of trying to prove who is human, the idea is 
-**simpler—create systems where being physically present still matters**.
+## The Vision
+**Handshake** is an exploration of keeping humans physically and temporally connected in a digital world. Instead of infinite scrolling feeds decided by algorithms, Handshake proposes a network of **digital graffitis anchored in exact physical coordinates and time**.
 
-Users **validate each other through real-world encounters** (e.g., Bluetooth), 
-establishing a minimal layer of trust. Once that validation happens, they can 
-continue interacting online. The goal is not to guarantee identity, but to 
-**anchor digital relationships in physical presence**.
+Users leave messages in specific locations. To discover them, you must explore those coordinates (either physically or virtually through the space-time map). The system is built on a peer-to-peer (P2P) BitTorrent-like architecture, where users "seed" the graffitis they encounter, keeping them alive in the network.
 
-This system favors **local, small-scale connections** over global reach. 
-There are no feeds or algorithms deciding what you see. Geography and 
-connections become the organizing principle. **Messages live in networks** of
-people who have met, and they **propagate through those connections, similar
-to how data spreads in peer-to-peer systems**.
+## The "Handshake" Mechanic
+The core organizing principle of visibility is the **Handshake**—a cryptographic validation of trust and presence.
 
-You can send **messages to people, to places, or to ideas. Where do ideas live? 
-In the geographies where people talk**.
+Everyone can see the messages left in the world, but **visibility distance and prominence** are dictated by Handshakes:
+1. **Local by Default:** A new graffiti is strictly local. You can only see it if your viewport (or physical GPS) is very close to its exact space-time coordinates.
+2. **The Handshake Multiplier (Social Proof):** If a message accumulates many Handshakes (validations from users who encounter it), its visibility radius expands. It becomes a beacon that can be seen from much further away.
+3. **Your Trust Network:** Messages left by people you have personally "Handshaked" with (your trusted contacts) will always be highlighted and visible to you from a much greater distance. 
 
----
+## Architecture: The Web MVP
 
-# Strata: Geographic P2P Swarms
-
-Strata is the persistence engine of Handshake, allowing humans to leave permanent digital traces in physical locations. It treats the history of a place as a digital palimpsest: layers of messages (strata) that accumulate over time and whose survival depends on collective interest (seeding).
-
-## Current Architecture (Hito 1 - Refined)
+We are building a Web-first MVP that leverages browser technologies for a decentralized experience.
 
 ```mermaid
 graph TD
-    User((User)) --> CLI[Strata CLI]
-    CLI --> Engine[Strata Engine]
+    User((User)) --> WebApp[Web Frontend - Vite/React]
+    WebApp --> WebRTC[WebRTC P2P Swarm]
+    WebApp --> Tracker[Django Space-Time Tracker]
     
-    subgraph "Engine Orchestration"
-        Engine --> Sync[Gossip Sync Local]
-        Engine --> Swarm[Swarm Manager Global]
-        Engine --> Storage[Storage Manager]
-        Engine --> Identity[Identity & Contacts]
-        Engine --> Relay[Relay Manager]
+    subgraph "The Swarm (Browsers)"
+        WebRTC <-->|Direct P2P Seeding| OtherPeers[Other Users in the same Zone]
     end
     
-    subgraph "Transports"
-        Sync ---|UDP/Gossip| LocalPeers[Local Neighbors]
-        Swarm ---|BitTorrent| GlobalPeers[Global Seeders]
+    subgraph "Backend Infrastructure"
+        Tracker --> Engine[Strata Core Engine - Python]
     end
     
-    Identity -.->|Trust Link| Sync
-    Relay -->|Seeding| Swarm
+    OtherPeers -.->|Signaling| Tracker
 ```
 
-### Key Concepts
-- **Agnostic Engine:** The core logic is platform-independent. `StrataEngine` is a pure-logic component that can be embedded in CLI tools, mobile apps, or desktop clients.
-- **Unified Transport:** It transparently manages both local Gossip and global BitTorrent swarms.
-- **Transparent Sync:** The system automatically uses proximity for real-time interaction and swarms for historical persistence.
-- **Bridge Discovery:** Peers found on BitTorrent are automatically bridged to the Gossip network.
+### Key Components
+1. **Django (The Space-Time Tracker):** Django does not act as a centralized database for all messages. Instead, it acts as a BitTorrent Tracker. When you navigate to a coordinate on the map, Django connects you with other users (peers) exploring the same area.
+2. **Web Frontend (Vite/React + WebRTC):** Provides a rich, premium interface to navigate space and a time-slider to explore the past. Once Django connects you to peers, your browser downloads and seeds the graffitis directly from them via WebRTC.
+3. **Strata (The Agnostic Engine):** The pure-Python core logic (`src/strata`). It handles the validation, cryptographic rules, and data structures of the space-time graffitis, remaining independent of the web transport layer.
 
-## How to use
+## Roadmap
 
-Ensure you have [uv](https://github.com/astral-sh/uv) installed, then run the commands directly with `uv run strata <command>`.
+### Hito 1 & 2 (Foundations)
+- [x] Physical Persistence & Archaeological Scan logic.
+- [x] Unified Engine concept.
+- [x] Identity Manager & core Handshake Protocol logic.
 
-### Commands
+### Hito 3: The Web Pivot (Current)
+- [ ] **Django Tracker:** Implement the signaling server for spatial-temporal peer discovery.
+- [ ] **Web MVP UI:** Build the map and time-slider interface.
+- [ ] **WebRTC Integration:** Implement browser-to-browser graffiti seeding.
+- [ ] **Visibility Mechanics:** Integrate the "Handshake multiplier" logic to expand the visibility radius of validated messages.
+- [ ] **No-Login & Local Seeding:** Permitir seleccionar una carpeta local desde la web para seedear graffitis en vivo (File System API), utilizando identidades portables mediante la exportación/importación de un archivo `.key`.
 
-- **`node`**: Starts a P2P node for a specific location.
-  - Usage: `uv run strata node --lat 40.41 --lon -3.70`
-  - Purpose: Syncs messages for that location and acts as a relay for your distant boards.
+### Hito 4: Hilos de Conversación Espacial (Next)
+- [ ] **Graffiti Connections:** Encontrar la manera de conectar graffitis (hilos de conversación/threads), permitiendo seguir un hilo de discusión entre distintos graffitis localizados en diferentes partes de la red.
 
-- **`write`**: Leaves a message on the board at your current location.
-  - Usage: `uv run strata write "Hello world" --lat 40.41 --lon -3.70`
-  - Purpose: Signs and broadcasts your message to the local swarm.
-
-- **`read`**: Reads messages from the swarm at your current location.
-  - Usage: `uv run strata read --lat 40.41 --lon -3.70`
-  - Purpose: Pulls history and displays messages, resolving author aliases if known.
-
-- **`handshake`**: Initiates a cryptographic handshake with peers.
-  - Usage: `uv run strata handshake`
-  - Purpose: Broadcasts your signed identity so others can add you as a trusted contact.
-
-- **`contact`**: Manage your trusted contacts.
-  - `add <pk> <alias>`: Saves a peer's public key as a trusted contact.
-  - `list`: Displays your current trust graph.
-
-- **`relay`**: Manage your persistent Social Relays.
-  - `add <geohash>`: Start persistently seeding a distant board.
-  - `list`: View the boards you are currently relaying.
-  - `remove <info_hash>`: Stop seeding a specific board.
-
-## Next Steps
-
-### Hito 1 (Completed)
-- [x] **Physical Persistence:** Automatically save .msg files to the torrent folder on write.
-- [x] **Archaeological Scan:** Implement read to scan and verify signatures of local messages.
-- [x] **Metabolism:** Simple TTL or storage limit for the local cache.
-- [x] **Unified Engine:** Gossip + BitTorrent transport abstraction.
-
-### Hito 2: Social Layer
-- [x] **Identity Manager:** Persistent Ed25519 keys and Contact Book.
-- [x] **Handshake Protocol:** Cryptographic peer-to-peer verification.
-- [x] **Social Relays:** Listen to distant boards via trusted contacts.
-
----
-
-## Learnings & Architecture
-
-Detailed documentation on the principles behind Strata:
-
-1. [uv & Modern Python](docs/learnings/01-uv-python.md)
-2. [Sovereign Identity (Ed25519)](docs/learnings/02-ed25519-identity.md)
-3. [Geohashing & Swarms](docs/learnings/03-geohashing-swarms.md)
-4. [Contacts & Trust Graphs](docs/learnings/04-contact-trust-graphs.md)
-5. [Digital Metabolism & Storage](docs/learnings/05-metabolism-storage.md)
-6. [P2P Sync Protocol (Gossip)](docs/learnings/06-p2p-sync-protocol.md)
-
-
-### Hito 3: Physical Presence
-- [x] **Design:** Presence Protocol with BLE-HAL and RSSI proximity filtering.
-- [x] **BLE Integration:** Implement `PresenceManager` and BLE beacon broadcasting.
-- [ ] **Proximity UI:** Mobile implementation for discovery and handshake confirmation.
