@@ -55,4 +55,6 @@ graph TD
 
 ### Hito 4: Hilos de Conversación Espacial (Next)
 - [ ] **Graffiti Connections:** Encontrar la manera de conectar graffitis (hilos de conversación/threads), permitiendo seguir un hilo de discusión entre distintos graffitis localizados en diferentes partes de la red.
+- [ ] **Multimedia Graffitis:** Añadir soporte y compatibilidad para subir e integrar contenidos multimedia (audios, videos e imágenes) dentro de los graffitis espaciales.
+
 
