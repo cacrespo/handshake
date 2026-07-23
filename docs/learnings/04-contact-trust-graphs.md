@@ -1,27 +1,26 @@
-# Learning 04: Contacts & Trust Graphs
+# Learning 04: Contacts & Trust Graphs (Web MVP)
 
-In Milestone 2, we moved from anonymous messages to **Identity-aware communication**. This allows users to build "Trust Graphs" based on physical or social encounters.
+In our current Web MVP, we rely on **Identity-aware communication**. This allows users to build "Trust Graphs" based on physical encounters, which directly influence how they perceive the digital world.
 
 ## 1. Identity Persistence
-Unlike Milestone 1 (where we used dummy keys), we now use an `IdentityManager`. 
-- **User Secret:** Your `Ed25519` private key is stored locally in `~/.strata/identity.json`.
-- **Consistency:** Your messages across different locations and times now carry the same Public Key, allowing others to recognize you as the same entity.
+We use an `IdentityManager`. 
+- **User Secret:** Your `Ed25519` private key is managed by your local environment (e.g., in the browser's secure storage or a local backend).
+- **Consistency:** Your messages across different locations and times carry the same Public Key, allowing others to recognize you as the same entity.
 
 ## 2. The Contact Book
 The `ContactBook` is a local database of public keys mapped to human-readable aliases.
-- **Alias Resolution:** When the `StrataEngine` reads a message, it checks the `ContactBook`. If the `author_pk` is recognized, it displays the alias (e.g., "Alice") instead of a raw hex string.
+- **Alias Resolution:** When the frontend reads a message, it checks the `ContactBook`. If the `author_pk` is recognized, it displays the alias (e.g., "Alice") and applies special visibility rules.
 - **Local Sovereignty:** Your contacts are private to you. No central server knows who your friends are.
 
-## 3. Trust Graphs & Social Relays (Upcoming)
-By recognizing identities, we can build advanced features:
-- **Social Relays:** If a trusted contact (someone in your `ContactBook`) seeds a distant board, your node can prioritize syncing that data through them.
-- **Reputation:** We can filter or highlight messages from known contacts, creating a high-signal environment without centralized moderation.
+## 3. Trust Graphs & Visibility Multipliers
+By recognizing identities, we build our core visibility mechanic:
+- **Highlighted Traces:** Messages left by a trusted contact (someone in your `ContactBook`) are always highlighted and visible from much further distances in space and time.
+- **Reputation (Handshake Accumulation):** Even for strangers, if a message accumulates many Handshakes (validations from other users), it becomes a high-signal trace that is visible from further away.
 
-## 4. The Handshake Protocol
+## 4. The Handshake Protocol (Intentional Trust)
 A "Handshake" is the act of two peers cryptographically verifying their identities.
-- **Mechanism:** In Milestone 2, this is implemented via UDP broadcast. A node sends a signed packet containing its Public Key and a current timestamp.
-- **Verification:** When a peer receives a handshake, they verify the signature using the provided Public Key.
-- **Contact Addition:** Once verified, the UI prompts the user to add the peer to their `ContactBook` with a friendly alias. This "links" the cryptographic identity to a human name.
+- **Mechanism:** In the Web MVP, this is typically an intentional act done in person. Users might scan a QR code displayed on each other's screens, exchanging their Public Keys.
+- **Verification:** Once exchanged and verified, the UI prompts the user to add the peer to their `ContactBook` with a friendly alias. This "links" the cryptographic identity to a human name and activates the visibility multiplier for their messages.
 
 ---
-*Code Reference:* See `src/strata/core/identity.py` for identity management and `src/strata/core/sync.py` for the `HANDSHAKE` packet logic.
+*Code Reference:* See `src/strata/core/identity.py` for identity management.
