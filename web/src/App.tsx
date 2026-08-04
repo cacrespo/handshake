@@ -117,26 +117,12 @@ function canonicalStringify(obj: any): string {
   return "{" + parts.join(",") + "}";
 }
 
-function getSigningData(msgContent: any) {
-  const data = {
-    "version": "1.0",
-    "header": {
-      "type": msgContent.header.type,
-      "owner_pk": msgContent.header.owner_pk,
-      "author_pk": msgContent.header.author_pk,
-      "timestamp": msgContent.header.timestamp
-    },
-    "location": {
-      "geohash": msgContent.location.geohash,
-      "proof": {
-        "type": msgContent.location.proof.type,
-        "data": msgContent.location.proof.data
-      }
-    },
-    "content": {
-      "text": msgContent.content.text
-    }
-  };
+function getSigningData(msg: any) {
+  // Clonar el mensaje para evitar modificar el original y remover la firma
+  const data = JSON.parse(JSON.stringify(msg));
+  if (data.header) {
+    delete data.header.signature;
+  }
   return canonicalStringify(data);
 }
 
@@ -240,6 +226,7 @@ export default function App() {
     return d.toLocaleDateString("es-AR", { weekday: 'long', day: 'numeric', month: 'long' });
   };
   const [newGraffitiContent, setNewGraffitiContent] = useState("");
+  const [replyingTo, setReplyingTo] = useState<any | null>(null);
   const [trustedAuthors, setTrustedAuthors] = useState<string[]>([]);
   const [mapTarget, setMapTarget] = useState<[number, number] | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -320,7 +307,7 @@ export default function App() {
   };
 
   const exportKey = () => {
-    const keyData = JSON.stringify({ publicKey, secretKey }, null, 2);
+    const keyData = JSON.stringify({ public_key: publicKey, private_key: secretKey }, null, 2);
     const blob = new Blob([keyData], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -338,14 +325,16 @@ export default function App() {
     reader.onload = (event) => {
       try {
         const keys = JSON.parse(event.target?.result as string);
-        if (keys.publicKey && keys.secretKey) {
-          localStorage.setItem("handshake_pubkey", keys.publicKey);
-          localStorage.setItem("handshake_seckey", keys.secretKey);
-          setPublicKey(keys.publicKey);
-          setSecretKey(keys.secretKey);
+        const pubKey = keys.public_key || keys.publicKey;
+        const secKey = keys.private_key || keys.secretKey;
+        if (pubKey && secKey) {
+          localStorage.setItem("handshake_pubkey", pubKey);
+          localStorage.setItem("handshake_seckey", secKey);
+          setPublicKey(pubKey);
+          setSecretKey(secKey);
           addLog("Identity imported successfully!", "success");
         } else {
-          addLog("Invalid .key format.", "danger");
+          addLog("Invalid .key format. Keys not found.", "danger");
         }
       } catch (err) {
         addLog("Error parsing key file.", "danger");
@@ -652,6 +641,7 @@ export default function App() {
         type: "PUBLIC",
         owner_pk: null,
         author_pk: publicKey,
+        parent_signature: replyingTo ? replyingTo.header.signature : null,
         timestamp: timestamp
       },
       location: {
@@ -682,6 +672,7 @@ export default function App() {
 
     setLocalGraffitis(prev => [...prev, fullySignedMessage]);
     setNewGraffitiContent("");
+    setReplyingTo(null);
     addLog("Created and signed new local graffiti!", "success");
 
     Object.values(dataChannels.current).forEach(dc => {
@@ -780,6 +771,110 @@ export default function App() {
     }
   });
 
+  // Helper to build recursive thread trees from flat messages list
+  const buildThreadTrees = (graffitis: any[]) => {
+    const map: { [sig: string]: any & { replies: any[] } } = {};
+    graffitis.forEach(g => {
+      if (g.header && g.header.signature) {
+        map[g.header.signature] = { ...g, replies: [] };
+      }
+    });
+    const roots: any[] = [];
+    graffitis.forEach(g => {
+      if (!g.header || !g.header.signature) return;
+      const mapped = map[g.header.signature];
+      const parentSig = g.header.parent_signature;
+      if (parentSig && map[parentSig]) {
+        map[parentSig].replies.push(mapped);
+      } else {
+        roots.push(mapped);
+      }
+    });
+    // Sort roots by timestamp
+    roots.sort((a, b) => a.header.timestamp - b.header.timestamp);
+    const sortReplies = (node: any) => {
+      node.replies.sort((a: any, b: any) => a.header.timestamp - b.header.timestamp);
+      node.replies.forEach(sortReplies);
+    };
+    roots.forEach(sortReplies);
+    return roots;
+  };
+
+  // Recursive component to render threaded graffiti cards
+  const ThreadedCard = ({ node, depth = 0 }: { node: any; depth: number }) => {
+    const isLocal = localGraffitis.some(g => g.header.signature === node.header.signature);
+    const isTrusted = trustedAuthors.includes(node.header.author_pk);
+    const gCoords = decodeGeohash(node.location.geohash);
+    const dist = getDistance(coords[0], coords[1], gCoords.lat, gCoords.lon);
+
+    return (
+      <div style={{ 
+        marginLeft: depth > 0 ? "16px" : "0", 
+        borderLeft: depth > 0 ? "2px solid rgba(168, 85, 247, 0.3)" : "none", 
+        paddingLeft: depth > 0 ? "12px" : "0",
+        marginTop: "8px"
+      }}>
+        <div 
+          className={`timeline-card ${isTrusted ? "trusted" : isLocal ? "local" : "remote"}`}
+          onClick={() => handleCardClick([gCoords.lat, gCoords.lon])}
+          style={{ marginBottom: "4px" }}
+        >
+          <div className="card-header">
+            <span className="card-author">
+              {node.header.author_pk.substring(0, 8)}...
+            </span>
+            <span className="card-time">
+              {new Date(node.header.timestamp * 1000).toLocaleTimeString([], {hour: "2-digit", minute:"2-digit"})}
+            </span>
+          </div>
+          <div className="card-content">
+            "{node.content.text}"
+          </div>
+          <div className="card-footer">
+            <span className="card-geohash">
+              Geohash: <code>{node.location.geohash.substring(0, 7)}</code>
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              {node.header.author_pk !== publicKey && (
+                <button
+                  className="btn btn-secondary"
+                  style={{ padding: "2px 6px", fontSize: "10px", height: "20px", display: "inline-flex", alignItems: "center", gap: "2px" }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setReplyingTo(node);
+                    const inputEl = document.querySelector(".timeline-input-el") as HTMLInputElement;
+                    if (inputEl) inputEl.focus();
+                  }}
+                >
+                  💬 Responder
+                </button>
+              )}
+              {!isLocal && (
+                <button
+                  className="btn btn-primary"
+                  style={{ padding: "2px 6px", fontSize: "10px", height: "20px", display: "inline-flex" }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    saveAndSeedMessage(node);
+                  }}
+                >
+                  📥 Seedear
+                </button>
+              )}
+              <span className={`card-distance ${isTrusted ? "trusted" : isLocal ? "local" : "remote"}`}>
+                <MapPin size={12} style={{ verticalAlign: "middle", marginRight: "2px" }} />
+                {dist.toFixed(0)}m
+              </span>
+            </div>
+          </div>
+        </div>
+        {node.replies.map((reply: any, idx: number) => (
+          <ThreadedCard key={`reply-${node.header.signature}-${idx}`} node={reply} depth={depth + 1} />
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div id="root">
       <header className="app-header">
@@ -824,12 +919,23 @@ export default function App() {
 
           {/* Leave Graffiti Block at the top of Timeline Feed */}
           <div style={{ padding: "0 20px 20px 20px", borderBottom: "1px solid var(--border-color)" }}>
+            {replyingTo && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(168, 85, 247, 0.1)", padding: "6px 12px", borderRadius: "6px", marginBottom: "8px", fontSize: "12px", borderLeft: "3px solid var(--accent)" }}>
+                <span>Respondiendo a: <code style={{ color: "var(--accent)" }}>{replyingTo.header.author_pk.substring(0, 8)}...</code></span>
+                <button 
+                  style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontWeight: 700 }}
+                  onClick={() => setReplyingTo(null)}
+                >
+                  [Cancelar]
+                </button>
+              </div>
+            )}
             <div className="info-card">
               <div style={{ display: "flex", gap: "8px" }}>
                 <input 
                   type="text" 
-                  className="form-input" 
-                  placeholder="Escribe tu graffiti espacial..."
+                  className="form-input timeline-input-el" 
+                  placeholder={replyingTo ? "Escribe tu respuesta..." : "Escribe tu graffiti espacial..."}
                   value={newGraffitiContent}
                   onChange={(e) => setNewGraffitiContent(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleCreateGraffiti()}
@@ -855,55 +961,9 @@ export default function App() {
                 </span>
               </div>
             ) : (
-              filteredGraffitis.map((graf, idx) => {
-                const isLocal = localGraffitis.some(g => g.header.signature === graf.header.signature);
-                const isTrusted = trustedAuthors.includes(graf.header.author_pk);
-                const gCoords = decodeGeohash(graf.location.geohash);
-                const dist = getDistance(coords[0], coords[1], gCoords.lat, gCoords.lon);
-                
-                return (
-                  <div 
-                    key={`card-${idx}`}
-                    className={`timeline-card ${isTrusted ? "trusted" : isLocal ? "local" : "remote"}`}
-                    onClick={() => handleCardClick([gCoords.lat, gCoords.lon])}
-                  >
-                    <div className="card-header">
-                      <span className="card-author">
-                        {graf.header.author_pk.substring(0, 8)}...
-                      </span>
-                      <span className="card-time">
-                        {new Date(graf.header.timestamp * 1000).toLocaleTimeString([], {hour: "2-digit", minute:"2-digit"})}
-                      </span>
-                    </div>
-                    <div className="card-content">
-                      "{graf.content.text}"
-                    </div>
-                    <div className="card-footer">
-                      <span className="card-geohash">
-                        Geohash: <code>{graf.location.geohash.substring(0, 7)}</code>
-                      </span>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        {!isLocal && (
-                          <button
-                            className="btn btn-primary"
-                            style={{ padding: "2px 6px", fontSize: "10px", height: "20px", display: "inline-flex" }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              saveAndSeedMessage(graf);
-                            }}
-                          >
-                            📥 Seedear
-                          </button>
-                        )}
-                        <span className={`card-distance ${isTrusted ? "trusted" : isLocal ? "local" : "remote"}`}>
-                          <MapPin size={12} style={{ verticalAlign: "middle", marginRight: "2px" }} />
-                          {dist.toFixed(0)}m
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
+              buildThreadTrees(filteredGraffitis).map((node, idx) => (
+                <ThreadedCard key={`root-${idx}`} node={node} depth={0} />
+              ))
             )}
           </div>
         </div>
