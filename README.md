@@ -46,15 +46,15 @@ graph TD
 - [x] Unified Engine concept.
 - [x] Identity Manager & core Handshake Protocol logic.
 
-### Hito 3: The Web Pivot (Current)
-- [ ] **Django Tracker:** Implement the signaling server for spatial-temporal peer discovery.
-- [ ] **Web MVP UI:** Build the map and time-slider interface.
-- [ ] **WebRTC Integration:** Implement browser-to-browser graffiti seeding.
-- [ ] **Visibility Mechanics:** Integrate the "Handshake multiplier" logic to expand the visibility radius of validated messages.
-- [ ] **No-Login & Local Seeding:** Permitir seleccionar una carpeta local desde la web para seedear graffitis en vivo (File System API), utilizando identidades portables mediante la exportación/importación de un archivo `.key`.
+### Hito 3: The Web Pivot (Completado)
+- [x] **Django Tracker:** Implement the signaling server for spatial-temporal peer discovery.
+- [x] **Web MVP UI:** Build the map and time-slider interface.
+- [x] **WebRTC Integration:** Implement browser-to-browser graffiti seeding.
+- [x] **Visibility Mechanics:** Integrate the "Handshake multiplier" logic (now open public access with visual prominence and priority seeding for trusted peers).
+- [x] **No-Login & Local Seeding:** Permitir seleccionar una carpeta local desde la web para seedear graffitis en vivo (File System API), utilizando identidades portables mediante la exportación/importación de un archivo `.key`.
 
-### Hito 4: Hilos de Conversación Espacial (Next)
-- [ ] **Graffiti Connections:** Encontrar la manera de conectar graffitis (hilos de conversación/threads), permitiendo seguir un hilo de discusión entre distintos graffitis localizados en diferentes partes de la red.
+### Hito 4: Hilos de Conversación Espacial (En Progreso)
+- [x] **Graffiti Connections:** Encontrar la manera de conectar graffitis (hilos de conversación/threads), permitiendo seguir un hilo de discusión entre distintos graffitis localizados en diferentes partes de la red.
 - [ ] **Multimedia Graffitis:** Añadir soporte y compatibilidad para subir e integrar contenidos multimedia (audios, videos e imágenes) dentro de los graffitis espaciales.
 
 
