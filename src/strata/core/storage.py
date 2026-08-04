@@ -179,6 +179,33 @@ class StorageManager:
                 with open(file_path, "r") as f:
                     data = json.load(f)
 
+                # Extract extra fields to preserve unrecognized metadata
+                import copy
+                extra = copy.deepcopy(data)
+                extra.pop("version", None)
+                if "header" in extra:
+                    extra["header"].pop("type", None)
+                    extra["header"].pop("owner_pk", None)
+                    extra["header"].pop("author_pk", None)
+                    extra["header"].pop("parent_signature", None)
+                    extra["header"].pop("timestamp", None)
+                    extra["header"].pop("signature", None)
+                    if not extra["header"]:
+                        extra.pop("header")
+                if "location" in extra:
+                    extra["location"].pop("geohash", None)
+                    if "proof" in extra["location"]:
+                        extra["location"]["proof"].pop("type", None)
+                        extra["location"]["proof"].pop("data", None)
+                        if not extra["location"]["proof"]:
+                            extra["location"].pop("proof")
+                    if not extra["location"]:
+                        extra.pop("location")
+                if "content" in extra:
+                    extra["content"].pop("text", None)
+                    if not extra["content"]:
+                        extra.pop("content")
+
                 # Reconstruct message
                 msg = Message(
                     author_pk=bytes.fromhex(data["header"]["author_pk"]),
@@ -188,12 +215,16 @@ class StorageManager:
                     owner_pk=bytes.fromhex(data["header"]["owner_pk"])
                     if data["header"]["owner_pk"]
                     else None,
+                    parent_signature=bytes.fromhex(data["header"]["parent_signature"])
+                    if data["header"].get("parent_signature")
+                    else None,
                     timestamp=data["header"]["timestamp"],
                     proof_type=data["location"]["proof"]["type"],
                     proof_data=data["location"]["proof"]["data"],
                     signature=bytes.fromhex(data["header"]["signature"])
                     if data["header"]["signature"]
                     else None,
+                    extra=extra,
                 )
 
                 if msg.verify():
