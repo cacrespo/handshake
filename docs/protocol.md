@@ -48,14 +48,13 @@ Para permitir la importación y exportación soberana de llaves entre clientes (
 ---
 
 ## 2. Estructura del Mensaje (Schema)
-Todos los graffitis en la red se representan y se transmiten utilizando el formato de serialización JSON. El esquema consta de tres bloques principales: `header`, `location` y `content`.
+
+Todos los graffitis en la red son públicos, abiertos e inmutables. Se representan y transmiten utilizando serialización JSON estricta. El esquema consta de tres bloques principales: `header`, `location` y `content`.
 
 ```json
 {
   "version": "1.0",
   "header": {
-    "type": "PUBLIC",
-    "owner_pk": null,
     "author_pk": "hex_public_key_32_bytes",
     "parent_signature": "hex_parent_signature_64_bytes_optional",
     "timestamp": 1712345678,
@@ -63,18 +62,18 @@ Todos los graffitis en la red se representan y se transmiten utilizando el forma
   },
   "location": {
     "geohash": "dr5reg6",
-    "proof": {
-      "type": "GPS",
-      "data": "40.712776,-74.005974"
+    "coordinates": {
+      "lat": 40.712776,
+      "lon": -74.005974
     }
   },
   "content": {
-    "text": "Contenido del graffiti",
+    "text": "Texto del graffiti anclado en el espacio-tiempo",
     "attachments": [
       {
-        "url": "https://example.com/imagen.jpg",
+        "url": "https://example.com/audio.ogg",
         "sha256": "hash_sha256_hexadecimal_de_64_caracteres",
-        "mime_type": "image/jpeg"
+        "mime_type": "audio/ogg"
       }
     ]
   }
@@ -82,32 +81,24 @@ Todos los graffitis en la red se representan y se transmiten utilizando el forma
 ```
 
 ### Campos:
-*   `header.type`: Tipo de mensaje (`PUBLIC` para libre acceso en texto plano o `ANCHORED` para mensajes privados cifrados dirigidos a un destinatario específico).
-*   `header.owner_pk`: Clave pública (en formato hexadecimal de 32 bytes) del destinatario o propietario. Obligatorio si el tipo es `ANCHORED`, nulo si es `PUBLIC`.
-*   `header.author_pk`: Clave pública (en formato hexadecimal) del autor del graffiti.
-*   `header.parent_signature` (Opcional): Firma Ed25519 (string hexadecimal de 128 caracteres) del graffiti padre al que responde este mensaje. Nulo si el mensaje inicia un nuevo hilo.
-*   `header.timestamp`: Marca de tiempo UNIX (segundos).
-*   `header.signature`: Firma Ed25519 del objeto serializado en representación canónica (hexadecimal).
-
-### Mensajes Anclados (`ANCHORED`) y Cifrado E2EE:
-Cuando el tipo de mensaje se define como `ANCHORED`:
-1.  **Cifrado de Extremo a Extremo (E2EE):** El texto contenido en `content.text` debe ser cifrado utilizando un esquema de clave pública/privada (como el cifrado autenticado de caja sellada, convirtiendo las llaves de firma Ed25519 a llaves de cifrado X25519).
-2.  **Distribución Ciega:** Los nodos del enjambre descargarán, almacenarán y seedearán el archivo del mensaje de forma normal como cualquier otro graffiti. Sin embargo, el contenido textual en `content.text` será ilegible para los transportadores. Solo el nodo que posea la clave privada correspondiente al `header.owner_pk` podrá descifrar y renderizar el mensaje en pantalla.
-*   `location.geohash`: Geohash que define la zona geográfica donde se ancla el mensaje.
-*   `location.proof`: Tipo de prueba de localización (`NONE`, `GPS`, `BLE`) y sus datos adicionales.
-*   `content.text`: Contenido textual del mensaje.
-*   `content.attachments` (Opcional): Lista de archivos multimedia adjuntos. Cada elemento contiene:
-    *   `url`: Dirección de descarga del archivo (HTTP, IPFS, Magnet Link).
-    *   `sha256`: Hash SHA-256 del archivo para verificación de integridad (obligatorio).
-    *   `mime_type`: Tipo de contenido del archivo (ej. `image/png`, `audio/ogg`, `video/mp4`).
+*   `header.author_pk`: Clave pública Ed25519 (string hexadecimal de 64 caracteres / 32 bytes) del autor que firmó el graffiti.
+*   `header.parent_signature` (Opcional): Firma Ed25519 del graffiti padre al que responde este mensaje (`null` si inicia una nueva conversación o huella independiente). Permite formar árboles y grafos de conversación espaciales.
+*   `header.timestamp`: Marca de tiempo UNIX (en segundos) en la que fue emitido el graffiti.
+*   `header.signature`: Firma digital Ed25519 del objeto serializado en formato canónico (excluyendo este mismo campo).
+*   `location.geohash`: Geohash estándar (longitud configurable, típicamente 5-7 caracteres) utilizado para indexar y descubrir enjambres espaciales de peers en el área.
+*   `location.coordinates`: Coordenadas geográficas exactas de alta precisión (`lat`, `lon`) para su renderizado en el mapa.
+*   `content.text`: Contenido textual del mensaje (obligatorio, texto plano o markdown simple).
+*   `content.attachments` (Opcional): Lista de archivos multimedia vinculados. Cada elemento incluye `url` de descarga, `sha256` para verificación criptográfica de integridad y `mime_type`.
 
 ### Serialización Canónica para la Firma:
-Para generar o verificar la firma, se toma el JSON del mensaje **excluyendo el campo `header.signature`**, y se ordena de forma recursiva por sus claves (`sort_keys=True` en Python / ordenamiento alfabético en JS). El texto resultante se codifica en UTF-8 antes de firmar.
+Para generar o verificar la firma Ed25519:
+1. Se toma el JSON del mensaje **excluyendo el campo `header.signature`**.
+2. Se ordenan de forma recursiva todas sus claves alfabéticamente (`sort_keys=True` en Python / ordenamiento alfabético de propiedades de objeto en TypeScript).
+3. Se genera la cadena JSON normalizada sin espacios superfluos, se codifica en UTF-8 y se firma/verifica con la clave Ed25519.
 
-### Extensibilidad y Compatibilidad Futura:
-Para garantizar que el protocolo pueda evolucionar sin romper la compatibilidad entre clientes de diferentes versiones:
-*   **Campos Desconocidos:** Si un cliente recibe un mensaje que contiene campos no definidos en su versión local del protocolo, debe ignorar dichos campos para el procesamiento o renderizado visual local, pero **debe preservarlos intactos** en el archivo JSON original al guardarlo en el disco y al retransmitirlo a otros peers.
-*   **Impacto en la Firma:** Al calcular la serialización canónica para verificar la firma, todos los campos (incluidos los desconocidos) deben ser incluidos y ordenados de forma recursiva. Eliminar o alterar cualquier campo desconocido invalidará la firma criptográfica Ed25519 del mensaje original.
+### Extensibilidad y Preservación de Datos:
+*   **Campos Desconocidos:** Si un cliente recibe un mensaje que contiene campos adicionales no contemplados en su versión, debe ignorarlos para el renderizado local, pero **debe preservarlos intactos** en el archivo JSON almacenado en disco y al retransmitirlo al enjambre P2P.
+*   **Inmutabilidad de la Firma:** Modificar, omitir o reordenar cualquier campo invalidará la firma criptográfica Ed25519 del mensaje original.
 
 ---
 
