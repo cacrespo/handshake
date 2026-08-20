@@ -1,9 +1,9 @@
 # Handshake: Space-Time Conexions
 
 ## The Vision
-**Handshake** is an exploration of keeping humans physically and temporally connected in a digital world. Instead of infinite scrolling feeds decided by algorithms, Handshake proposes a network of **digital graffitis anchored in exact physical coordinates and time**.
+**Handshake** is a decentralized, space-time anchored communication network where the central focus is **the message, not user profiles or accounts**. 
 
-Users leave messages in specific locations. To discover them, you must explore those coordinates (either physically or virtually through the space-time map). The system is built on a peer-to-peer (P2P) BitTorrent-like architecture, where users "seed" the graffitis they encounter, keeping them alive in the network.
+Rather than managing abstract digital identities or infinite algorithm-driven feeds, Handshake proposes a landscape of **digital graffitis anchored in exact coordinates and time**. Physical encounter validates human relationships, but the virtual network's core unit of value and memory is the space-time trace itself—seeded, preserved, and explored collectively through peer-to-peer swarms.
 
 ## The "Handshake" Mechanic
 The core organizing principle of visibility is the **Handshake**—a cryptographic validation of trust and presence.

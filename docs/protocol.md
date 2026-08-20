@@ -12,15 +12,17 @@ Este documento define la especificación técnica oficial del protocolo **Handsh
 ## Principio y Fundamento
 
 ### 1. La Visión
-El auge de inteligencias artificiales capaces de imitar el comportamiento humano a la perfección diluye la línea entre lo real y lo sintético en el plano virtual. Ante la imposibilidad técnica de certificar la humanidad de una entidad digital de forma puramente abstracta en la web, Handshake propone una resistencia: **mantener los cuerpos en el mundo físico para validar y confirmar el mundo virtual**.
+La mayoría de las redes tradicionales están centradas en la identidad abstracta: perfiles, cuentas, seguidores y métricas de reputación digital. En un entorno donde distinguir entre humanos, bots o identidades sintéticas es irrelevante o imposible en el plano virtual, **Handshake desplaza el centro de gravedad desde las personas hacia los mensajes**.
 
-En lugar de aislar a los individuos en "islas virtuales" gobernadas por algoritmos de optimización de atención y feeds infinitos, este protocolo utiliza el espacio físico y el tiempo real como el paisaje de validación. La información no viaja sin control hacia el usuario; el usuario debe explorar activamente el espacio y el tiempo para descubrir las huellas digitales.
+La red no busca gestionar ni validar perfiles virtuales. En su lugar, el sistema es una trama viva de **mensajes y graffitis anclados en coordenadas exactas de espacio y tiempo**.
+
+La validación de lo humano no ocurre mediante algoritmos de verificación digital, sino a través del **encuentro físico real**. El protocolo empuja hacia la presencia y la proximidad física, pero en el plano virtual la unidad fundamental es siempre la huella (el mensaje), no la cuenta ni la persona.
 
 ### 2. Intenciones y Filosofía del Protocolo
-*   **La Geografía como el Algoritmo:** No existen sistemas centralizados de recomendación ni ordenamientos sesgados. El único filtro de visibilidad y relevancia de un mensaje es la distancia física, el momento temporal y las relaciones orgánicas de confianza de quien lo lee.
-*   **Comunidades de Proximidad:** Romper la plaza pública global para retornar al intercambio a escala humana. Los usuarios interactúan y se comunican desde y dentro de sus vecindarios y trayectos cotidianos. Las ideas residen en los lugares físicos donde la gente realmente se reúne a conversar.
-*   **Economía de la Atención e Intencionalidad:** Incentivar un registro digital deliberado, artesanal y consciente, priorizando la relevancia de la comunicación y el contexto local sobre la saturación constante de información.
-*   **Soberanía de Datos Colectiva:** La infraestructura de almacenamiento y distribución es colectiva e independiente de silos corporativos. Cada nodo decide qué subconjunto de la memoria geográfica desea sembrar y preservar localmente en su disco, actuando como un custodio de la memoria histórica de su entorno.
+*   **El Mensaje como Unidad Soberana:** No existen muros personales, cuentas infladas ni feeds de usuarios. Hay graffitis en el espacio-tiempo. Un mensaje vale y existe por su ubicación, su contenido y el interés colectivo en preservarlo.
+*   **La Geografía y el Tiempo como el Algoritmo:** La visibilidad y el descubrimiento dependen de la geografía y el momento temporal. No existen algoritmos de atención ni optimización de engagement: para encontrar una huella digital, debes explorar esas coordenadas.
+*   **Custodia y Seeding Colectivo (Soberanía de Datos):** La red no depende de un servidor central propietario. Cualquier persona puede seedear mensajes, decidiendo libremente qué partes de la memoria espacial desea conservar, replicar o descartar en su propio almacenamiento local, actuando como custodio de la memoria histórica de su entorno.
+*   **Puente hacia el Encuentro Físico:** Aunque la red virtual almacena e intercambia mensajes sin importar el origen abstracto del autor, el protocolo incentiva y celebra el encuentro en el mundo real como el único espacio genuino de validación y conexión humana.
 
 ---
 
@@ -124,6 +126,8 @@ Los graffitis no se distribuyen ni se "seedean" de forma individual para evitar 
     1.  **Prioridad y Prominencia Visual:** Los graffitis cuyos autores figuren en la lista de confianza criptográfica del usuario (nodos con los que se ha realizado un Handshake) se mostrarán de forma destacada y prioritaria en la interfaz de usuario para diferenciarlos del flujo general.
     2.  **Sedeo Automático y Preservación:** Los nodos descargarán y sembrarán (seedearán) prioritariamente los graffitis creados por personas de su red de confianza. Estos mensajes reciben el trato de archivos protegidos (exentos del metabolismo de limpieza).
 *   **Limpieza (Metabolismo de Almacenamiento):** Cada enjambre local mantiene un límite (ej. 100 mensajes). Cuando se alcanza el límite, el nodo purga automáticamente los mensajes de autores desconocidos más antiguos para liberar espacio. Los mensajes de contactos de confianza (con Handshake verificado) quedan protegidos y nunca son eliminados automáticamente.
+*   **Exención de Filtros para Mensajes Locales:** Los graffitis almacenados en la carpeta local de seedeo (o en el almacenamiento local en memoria) de un cliente **quedan exentos de los filtros espacio-temporal generales** (filtros de distancia en el mapa y del control deslizante del tiempo). Esto asegura que la memoria sembrada o custodiada localmente por el nodo siempre sea visible en su interfaz, previniendo la desaparición de mensajes locales legítimos cuando se regenera la identidad del usuario (cambio de clave pública).
+*   **Escritura Automática e Inmediata en Disco:** Cuando un usuario crea un nuevo graffiti en el cliente, si existe una carpeta de seedeo local activa y configurada, el archivo `.msg` se guarda inmediatamente en el disco dentro de la carpeta del InfoHash espacial y temporal correspondiente, garantizando su persistencia y disponibilidad inmediata para la red P2P.
 
 ---
 
@@ -146,8 +150,8 @@ El protocolo define un enfoque flexible para el anclaje físico y temporal de la
 
 ## 7. Protocolo del Tracker y Ofuscación de Ubicación (Signaling)
 El tracker (o servidor de señalización) actúa únicamente como facilitador para conectar peers geográficamente cercanos. Para mitigar riesgos de rastreo de ubicación, los clientes disponen de dos modalidades de registro:
-1.  **Modo Preciso (Opción A):** El cliente envía su Geohash completo de precisión 7 (ej. `"dr5reg6"`). Esto permite que el tracker lo empareje de forma exacta y que sus vecinos puedan ver y renderizar su posición precisa en la grilla del mapa.
-2.  **Modo Ofuscado (Opción C):** El cliente decide preservar su privacidad y envía al tracker únicamente los primeros 5 caracteres de su Geohash (ej. `"dr5re"`). El tracker lo emparejará con los peers del área general (zona de ~5km) para permitir el establecimiento de la conexión WebRTC, pero los vecinos en el enjambre solo sabrán que está presente en la vecindad general, sin conocer su ubicación exacta.
+1.  **Modo Preciso (Opción A):** El cliente envía su Geohash completo de precisión 7 (ej. `"dr5reg6"`). Esto permite que el tracker lo empareje de forma exacta para el establecimiento optimizado de las conexiones WebRTC. *Nota de Privacidad:* Para prevenir el rastreo físico de personas, los clientes nunca renderizan en el mapa ni localizan visualmente las posiciones de otros peers; la interacción y descubrimiento social se realiza exclusivamente a través del intercambio y lectura de los graffitis.
+2.  **Modo Ofuscado (Opción C):** El cliente decide preservar su privacidad y envía al tracker únicamente los primeros 5 caracteres de su Geohash (ej. `"dr5re"`). El tracker lo emparejará con los peers del área general (zona de ~5km) para permitir el establecimiento de la conexión WebRTC, pero los vecinos en el enjambre solo sabrán de manera implícita su presencia general en la vecindad para posibilitar el emparejamiento, sin mostrar jamás rastros ni coordenadas de posicionamiento físico individual.
 
 ---
 
