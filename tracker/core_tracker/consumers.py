@@ -34,6 +34,18 @@ class TrackerConsumer(AsyncWebsocketConsumer):
             if not peer_id or not geohash:
                 return
 
+            # Si el peer ya estaba registrado y cambia de zona (geohash[:5]), dejamos la sala anterior y notificamos la partida.
+            if self.peer_id and self.geohash and self.geohash[:5] != geohash[:5]:
+                old_room = f"geo_{self.geohash[:5]}"
+                await self.channel_layer.group_discard(
+                    old_room,
+                    self.channel_name
+                )
+                await self.notify_neighbors(self.geohash, {
+                    "type": "peer_left",
+                    "peer_id": self.peer_id
+                })
+
             self.peer_id = peer_id
             self.geohash = geohash
 

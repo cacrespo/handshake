@@ -236,6 +236,7 @@ export default function App() {
   const pcs = useRef<{ [peerId: string]: RTCPeerConnection }>({});
   const dataChannels = useRef<{ [peerId: string]: RTCDataChannel }>({});
   const localGraffitisRef = useRef<any[]>([]);
+  const pendingCandidates = useRef<{ [peerId: string]: any[] }>({});
 
   // Keep ref up to date for async loops
   useEffect(() => {
@@ -522,6 +523,19 @@ export default function App() {
   const handleIncomingSignal = async (sender: string, signal: any) => {
     let pc = pcs.current[sender];
     
+    // Si recibimos una oferta (offer), significa que se inicia una nueva negociación.
+    // Descartamos cualquier conexión vieja o rota con ese peer para empezar de cero.
+    if (pc && signal.sdp && signal.sdp.type === "offer") {
+      try {
+        pc.close();
+      } catch (e) {}
+      pc = null;
+      delete pcs.current[sender];
+      if (dataChannels.current[sender]) {
+        delete dataChannels.current[sender];
+      }
+    }
+
     if (!pc) {
       addLog(`[P2P] Initializing connection response to: ${sender.substring(0, 8)}...`, "info");
       pc = new RTCPeerConnection({
@@ -560,8 +574,26 @@ export default function App() {
             }));
           }
         }
+
+        // Process any queued candidates
+        const queue = pendingCandidates.current[sender] || [];
+        for (const candidate of queue) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          } catch (e) {
+            console.error("Error applying queued candidate:", e);
+          }
+        }
+        delete pendingCandidates.current[sender];
       } else if (signal.candidate) {
-        await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        if (pc.remoteDescription && pc.remoteDescription.type) {
+          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        } else {
+          if (!pendingCandidates.current[sender]) {
+            pendingCandidates.current[sender] = [];
+          }
+          pendingCandidates.current[sender].push(signal.candidate);
+        }
       }
     } catch (err) {
       console.error("Error setting signaling message:", err);
@@ -625,7 +657,7 @@ export default function App() {
   };
 
   // 5. Add / Create new Graffiti (Write & Sign in browser)
-  const handleCreateGraffiti = () => {
+  const handleCreateGraffiti = async () => {
     if (!newGraffitiContent.trim()) return;
     if (!publicKey || !secretKey) {
       addLog("Cryptographic keys missing. Please generate/import keys.", "danger");
@@ -670,7 +702,7 @@ export default function App() {
       }
     };
 
-    setLocalGraffitis(prev => [...prev, fullySignedMessage]);
+    await saveAndSeedMessage(fullySignedMessage);
     setNewGraffitiContent("");
     setReplyingTo(null);
     addLog("Created and signed new local graffiti!", "success");
@@ -753,8 +785,10 @@ export default function App() {
   
   // Filter by time AND spatial-temporal visibility mechanics (Handshake multiplier)
   const filteredGraffitis = allGraffitis.filter(g => {
-    // Tus propios graffitis siempre son visibles
-    if (g.header.author_pk === publicKey) return true;
+    // Tus propios graffitis o cualquier graffiti guardado/seedeado localmente siempre son visibles
+    const isLocallyOwned = g.header.author_pk === publicKey;
+    const isLocallyStored = localGraffitis.some(lg => lg.header.signature === g.header.signature);
+    if (isLocallyOwned || isLocallyStored) return true;
     
     // Filtro temporal por día
     const dayRange = getDayRange(dayOffset);
@@ -1017,31 +1051,7 @@ export default function App() {
               </Popup>
             </Marker>
 
-            {/* Peer markers */}
-            {connectedPeers.map((peer, idx) => {
-              try {
-                const peerCoords = decodeGeohash(peer.geohash);
-                return (
-                  <Marker 
-                    key={`peer-${idx}`} 
-                    position={[peerCoords.lat, peerCoords.lon]}
-                    icon={L.divIcon({
-                      className: "custom-marker",
-                      html: '<div class="pulse-dot peer"></div>',
-                      iconSize: [24, 24]
-                    })}
-                  >
-                    <Popup>
-                      <strong>Peer Vecino</strong><br />
-                      ID: <code>{peer.peer_id.substring(0, 8)}...</code><br />
-                      Geohash: <code>{peer.geohash}</code>
-                    </Popup>
-                  </Marker>
-                );
-              } catch (e) {
-                return null;
-              }
-            })}
+
 
             {/* Graffiti Markers */}
             {filteredGraffitis.map((graf, idx) => {
