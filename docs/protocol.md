@@ -28,12 +28,16 @@ La validación de lo humano no ocurre mediante algoritmos de verificación digit
 
 
 ## 1. Identidad Criptográfica
-Cada usuario (peer) posee un par de claves asimétricas basadas en **Ed25519**:
-*   **Clave Privada (SK):** Utilizada para firmar digitalmente los mensajes creados. Debe mantenerse secreta.
-*   **Clave Pública (PK):** Utilizada como la identidad pública del usuario (`author_pk`) para verificar la autenticidad de sus mensajes.
+
+El protocolo no implementa conceptos de "cuentas de usuario", "registros" ni "perfiles". La identidad en Handshake es puramente criptográfica, descentralizada y orientada a la firma de mensajes:
+
+*   **Pares de Claves Ed25519:** Cada nodo o emisor utiliza un par de claves asimétricas Ed25519:
+    *   **Clave Privada (SK):** Instrumento local para firmar digitalmente los graffitis emitidos. Se mantiene estrictamente en el almacenamiento del cliente.
+    *   **Clave Pública (PK):** Identificador del autor (`author_pk`) utilizado por el enjambre P2P para verificar la integridad y autenticidad del mensaje y certificar que no fue alterado durante el transporte.
+*   **Pseudonimato Opcional:** Un usuario puede reutilizar su par de claves para mantener consistencia como autor o generar claves efímeras para emitir mensajes puntuales. El protocolo no vincula nombres, correos ni datos personales a ninguna clave.
 
 ### Formato de Portabilidad de Identidad (`.key`):
-Para permitir la importación y exportación de identidades entre clientes Web y de escritorio, el archivo JSON generado debe seguir estrictamente la nomenclatura *snake_case*:
+Para permitir la importación y exportación soberana de llaves entre clientes (Web, CLI, móvil) sin depender de servidores:
 ```json
 {
   "public_key": "clave_publica_en_hexadecimal_64_caracteres",
