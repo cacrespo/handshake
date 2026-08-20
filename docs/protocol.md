@@ -98,60 +98,55 @@ Para generar o verificar la firma Ed25519:
 
 ### Extensibilidad y Preservación de Datos:
 *   **Campos Desconocidos:** Si un cliente recibe un mensaje que contiene campos adicionales no contemplados en su versión, debe ignorarlos para el renderizado local, pero **debe preservarlos intactos** en el archivo JSON almacenado en disco y al retransmitirlo al enjambre P2P.
-*   **Inmutabilidad de la Firma:** Modificar, omitir o reordenar cualquier campo invalidará la firma criptográfica Ed25519 del mensaje original.
+*   **Inmutabilidad de la Firma:** Modificar, omitir o reordenar cualquier campo invalidar�## 3. Agrupación en Enjambres (Swarm Grouping)
+Los graffitis no se transmiten de forma aislada, sino agrupados en **directorios espaciales y temporales**:
 
----
-
-## 3. Agrupación en Enjambres (Swarm Grouping)
-Los graffitis no se distribuyen ni se "seedean" de forma individual para evitar la saturación de conexiones. En su lugar, se agrupan en **directorios espaciales y temporales**:
-
-1.  **Resolución Espacial:** El mapa se divide en celdas usando **Geohash de precisión 7** (aprox. 150m x 150m).
+1.  **Resolución Espacial:** El territorio se divide en celdas usando **Geohash de precisión 6 o 7** (entre ~1.2 km y ~150 metros).
 2.  **Resolución Temporal:** El tiempo se agrupa en **épocas mensuales** en formato `YYYY-MM`.
-3.  **Generación de InfoHash:** Se genera un identificador único SHA-1 determinista a partir del geohash y la época:
+3.  **Generación de InfoHash:** Se calcula un identificador determinista SHA-1 para el enjambre:
     $$\text{InfoHash} = \text{SHA1}(\text{geohash} + ":" + \text{epoch})$$
-4.  **Sedeo:** El enjambre de BitTorrent (o los canales WebRTC asociados) intercambia el directorio completo asociado a dicho `InfoHash`. Cada archivo dentro del directorio representa un mensaje individual nombrado de la forma:
+4.  **Sedeo Colectivo:** Las conexiones (WebRTC en Web o P2P de escritorio) intercambian los mensajes pertenecientes a dicho `InfoHash`. Cada archivo se almacena localmente como:
     `{timestamp}_{author_pk_prefix}.msg`
-5.  **Política de Sedeo Histórico:** Los nodos no limitan su actividad de sembrado únicamente al mes en curso. Un nodo sembrará activamente tanto la época actual como todas las épocas pasadas (meses anteriores) que posea almacenadas localmente para sus celdas geográficas de interés, actuando como un custodio histórico del lugar, siempre y cuando no se superen los límites globales de almacenamiento impuestos por su metabolismo local.
+5.  **Custodia Histórica:** Los nodos pueden sembrar tanto la época actual como épocas pasadas custodiadas en su almacenamiento local, preservando la memoria histórica de su entorno geográfico.
 
 ---
 
-## 4. Reglas de Visibilidad y Confianza (El Handshake)
-*   **Acceso Público y Abierto:** Cualquier usuario que consulte o descargue el enjambre correspondiente a un Geohash y una época determinada tendrá acceso visual a todos los graffitis públicos dentro de esa celda, sin limitaciones de distancia respecto a su posición en el mapa.
-*   **El Rol de la Confianza (Handshake):**
-    1.  **Prioridad y Prominencia Visual:** Los graffitis cuyos autores figuren en la lista de confianza criptográfica del usuario (nodos con los que se ha realizado un Handshake) se mostrarán de forma destacada y prioritaria en la interfaz de usuario para diferenciarlos del flujo general.
-    2.  **Sedeo Automático y Preservación:** Los nodos descargarán y sembrarán (seedearán) prioritariamente los graffitis creados por personas de su red de confianza. Estos mensajes reciben el trato de archivos protegidos (exentos del metabolismo de limpieza).
-*   **Limpieza (Metabolismo de Almacenamiento):** Cada enjambre local mantiene un límite (ej. 100 mensajes). Cuando se alcanza el límite, el nodo purga automáticamente los mensajes de autores desconocidos más antiguos para liberar espacio. Los mensajes de contactos de confianza (con Handshake verificado) quedan protegidos y nunca son eliminados automáticamente.
-*   **Exención de Filtros para Mensajes Locales:** Los graffitis almacenados en la carpeta local de seedeo (o en el almacenamiento local en memoria) de un cliente **quedan exentos de los filtros espacio-temporal generales** (filtros de distancia en el mapa y del control deslizante del tiempo). Esto asegura que la memoria sembrada o custodiada localmente por el nodo siempre sea visible en su interfaz, previniendo la desaparición de mensajes locales legítimos cuando se regenera la identidad del usuario (cambio de clave pública).
-*   **Escritura Automática e Inmediata en Disco:** Cuando un usuario crea un nuevo graffiti en el cliente, si existe una carpeta de seedeo local activa y configurada, el archivo `.msg` se guarda inmediatamente en el disco dentro de la carpeta del InfoHash espacial y temporal correspondiente, garantizando su persistencia y disponibilidad inmediata para la red P2P.
+## 4. Almacenamiento Soberano, Metabolismo y Handshakes
+
+*   **Acceso Universal:** Cualquier nodo que consulte una celda y época tiene acceso a todos los graffitis públicos disponibles en el enjambre de esa zona.
+*   **El Handshake (Validación Presencial):**
+    *   Un Handshake es un **intercambio criptográfico directo y presencial** (por ejemplo, escaneo de código QR cara a cara) de claves públicas Ed25519.
+    *   No crea "amistades de plataforma", sino una **lista local de confianza criptográfica** almacenada en el dispositivo.
+*   **Efectos del Handshake:**
+    1.  **Prominencia Visual:** Los mensajes cuyos autores pertenezcan a la lista de Handshakes del usuario se destacan visualmente en el mapa y la interfaz.
+    2.  **Inmunidad de Purga:** Los graffitis de contactos de confianza reciben la categoría de *memorias protegidas* y nunca se eliminan automáticamente.
+*   **Fijado y Custodia Manual:** El usuario puede marcar manualmente cualquier graffiti como "Fijado / Custodiado", protegiéndolo de cualquier política de limpieza para seedearlo indefinidamente.
+*   **Metabolismo y Cuota Configurable:**
+    *   El usuario puede configurar un **tope máximo de almacenamiento** (por ejemplo, límite en megabytes o cantidad de mensajes por celda/global).
+    *   Al alcanzar el tope, el cliente purga automáticamente los mensajes más antiguos de autores desconocidos (no protegidos ni fijados), manteniendo el almacenamiento local bajo control y según las preferencias del usuario.
 
 ---
 
-## 5. Descubrimiento Social de Enjambres (Social Discovery)
-Para maximizar la resiliencia y la propagación de los graffitis en la red P2P, los nodos implementan un modelo de **Descubrimiento Social Abierto**:
-*   **Intercambio de Relays:** Al conectarse con cualquier peer (sea a través de UDP en el cliente de escritorio o WebRTC en el cliente Web), los nodos anuncian de forma abierta la lista completa de `relays` (los InfoHashes de las celdas geográficas que están sembrando activamente en su almacenamiento local).
-*   **Sedeo por Confianza Solidaria:** Cuando un nodo detecta que un peer verificado de su lista de contactos (Handshake) está sembrando determinados enjambres distantes, el nodo local se une automáticamente a dichos enjambres para actuar como sembrador (seeder) de respaldo, incluso si el nodo local no se encuentra físicamente en esas ubicaciones.
+## 5. Descubrimiento Social de Enjambres (Social Relays)
+*   **Anuncio de Relays:** Al conectarse con peers, los clientes pueden anunciar la lista de celdas espaciales (`InfoHashes`) que custodian activamente.
+*   **Sedeo Solidario:** Si un nodo detecta que un contacto de su lista de Handshakes custodia enjambres distantes, puede optar por actuar como sembrador de respaldo para apoyar la preservación de esas huellas.
 
 ---
 
-## 6. Validación de Ubicación y Pruebas de Co-presencia
-El protocolo define un enfoque flexible para el anclaje físico y temporal de la información:
-*   **Carácter Declarativo:** La ubicación geográfica (Geohash y coordenadas específicas) y la marca de tiempo (timestamp) de un graffiti son **declarativas e intencionales**. El autor decide soberanamente en qué punto del espacio-tiempo desea plasmar su mensaje, equiparándose a la acción física y artística de pintar una pared real.
-*   **Prueba de Co-presencia (Opcional):** Como capa de veracidad física añadida, el emisor puede incluir una prueba de co-presencia en el campo `location.proof` con la siguiente estructura:
-    *   `proof.type`: `"CO-PRESENCE"`
-    *   `proof.data`: Un sub-objeto JSON que contiene la firma criptográfica Ed25519 de uno o más peers testigos (claves públicas vecinas descubiertas localmente vía Bluetooth/BLE o WebRTC en el mismo instante y zona).
-*   **Validación y Visualización:** Los clientes de lectura aceptan todos los graffitis válidos, pero las interfaces de usuario (como el mapa) pueden destacar con marcas visuales distintivas (por ejemplo, "Verificado por Vecinos") a aquellos graffitis que incorporen pruebas de co-presencia verificables.
+## 6. Naturaleza Declarativa del Espacio-Tiempo
+*   **Carácter Declarativo:** La ubicación (`geohash` y coordenadas) y la estampa de tiempo (`timestamp`) de un graffiti son declarativas e intencionales: el autor decide plasmar su huella en esas coordenadas, análogo a pintar un muro real en la ciudad.
+*   **Prueba Opcional de Co-presencia:** Un graffiti puede incluir opcionalmente firmas de peers testigos en el área (`location.proof`) para certificar presencia simultánea verificable.
 
 ---
 
-## 7. Protocolo del Tracker y Ofuscación de Ubicación (Signaling)
-El tracker (o servidor de señalización) actúa únicamente como facilitador para conectar peers geográficamente cercanos. Para mitigar riesgos de rastreo de ubicación, los clientes disponen de dos modalidades de registro:
-1.  **Modo Preciso (Opción A):** El cliente envía su Geohash completo de precisión 7 (ej. `"dr5reg6"`). Esto permite que el tracker lo empareje de forma exacta para el establecimiento optimizado de las conexiones WebRTC. *Nota de Privacidad:* Para prevenir el rastreo físico de personas, los clientes nunca renderizan en el mapa ni localizan visualmente las posiciones de otros peers; la interacción y descubrimiento social se realiza exclusivamente a través del intercambio y lectura de los graffitis.
-2.  **Modo Ofuscado (Opción C):** El cliente decide preservar su privacidad y envía al tracker únicamente los primeros 5 caracteres de su Geohash (ej. `"dr5re"`). El tracker lo emparejará con los peers del área general (zona de ~5km) para permitir el establecimiento de la conexión WebRTC, pero los vecinos en el enjambre solo sabrán de manera implícita su presencia general en la vecindad para posibilitar el emparejamiento, sin mostrar jamás rastros ni coordenadas de posicionamiento físico individual.
+## 7. Tracker y Privacidad Espacial (Signaling)
+El tracker actúa exclusivamente como servidor de señalización para conectar peers interesados en el mismo espacio-tiempo:
+*   **Conexión por Zona:** El cliente envía su Geohash (completo o truncado para mayor privacidad) para recibir la lista de peers activos en el área y establecer conexiones WebRTC directas.
+*   **Sin Rastreo de Personas:** El tracker no registra usuarios ni los clientes muestran posiciones de otros peers en tiempo real en el mapa; la única presencia visible y persistente en el mundo son los propios graffitis.
 
 ---
 
 ## 8. Hilos de Conversación Espacial (Message Threads)
-Para permitir discusiones e interacciones encadenadas, el protocolo implementa un modelo de **respuestas anidadas (estructura en árbol)**:
-*   **Vínculo al Padre (`parent_signature`):** Cualquier graffiti que constituya una respuesta a un mensaje existente debe incluir en su cabecera el campo `"parent_signature"` conteniendo la firma Ed25519 exacta del mensaje padre al que replica.
-*   **Independencia Espacial:** El mensaje de respuesta se ancla a la coordenada geográfica y temporal donde el autor de la respuesta se encuentra físicamente al momento de escribir (su propio Geohash y época). Esto permite que una conversación se mueva físicamente a lo largo de celdas adyacentes o trayectos.
-*   **Reconstrucción del Hilo:** Los clientes cargan todos los graffitis de las celdas visibles o sincronizadas y reconstruyen localmente el árbol de la conversación emparejando cada mensaje con su correspondiente padre a través de su firma criptográfica. Si un nodo no posee el mensaje padre en su almacenamiento local, puede solicitarlo de forma prioritaria a los peers utilizando los protocolos de sincronización.
+*   **Vínculo al Padre (`parent_signature`):** Para responder a un graffiti, el nuevo mensaje incluye en su cabecera la firma Ed25519 del mensaje original.
+*   **Conversaciones Itinerantes:** Cada respuesta se ancla en las coordenadas donde se encuentra el autor al momento de responder, permitiendo que un hilo trace un recorrido físico y temporal a lo largo del mapa.
+*   **Reconstrucción Descentralizada:** El cliente une los mensajes y reconstruye el árbol de la conversación localmente a partir de las firmas criptográficas.gráfica. Si un nodo no posee el mensaje padre en su almacenamiento local, puede solicitarlo de forma prioritaria a los peers utilizando los protocolos de sincronización.
