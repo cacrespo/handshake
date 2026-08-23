@@ -115,24 +115,29 @@ Graffitis are not transmitted in isolation; they are grouped into **spatial and 
 
 ---
 
-## 4. Sovereign Storage, Metabolism, and Embedded DuckDB
+## 4. Sovereign Storage, Logical Data Model, and Metabolism
 
-The protocol adopts **DuckDB** as the standard embedded OLAP database engine for both Web clients (`@duckdb/duckdb-wasm` in IndexedDB) and desktop/server clients (`duckdb` in Python).
+The Handshake protocol is **storage-engine agnostic**. Any compliant client implementation (Web, mobile, desktop, CLI) may use any underlying storage mechanism (DuckDB, SQLite, IndexedDB, PostgreSQL, or flat files) as long as it satisfies the logical data model, spatial indexing, recursive thread reconstruction, and metabolism purge rules defined below.
 
-### Local Database Schema (`graffitis`)
+> [!NOTE]
+> **Reference Implementation:** The official reference clients adopt **DuckDB** as the embedded storage engine both in the browser (`@duckdb/duckdb-wasm` in IndexedDB) and in Python (`duckdb`).
+
+### Logical Data Model (`graffitis`)
+Compliant storage implementations MUST index and persist graffitis matching the following logical relational contract:
+
 ```sql
 CREATE TABLE IF NOT EXISTS graffitis (
     signature VARCHAR PRIMARY KEY,         -- Unique Ed25519 message signature
     author_pk VARCHAR NOT NULL,           -- Author public key
-    parent_signature VARCHAR,             -- Parent message signature (for threads)
-    timestamp BIGINT NOT NULL,            -- UNIX timestamp
-    geohash VARCHAR NOT NULL,             -- Spatial geohash (e.g. 'dr5reg6')
-    lat DOUBLE NOT NULL,                  -- Latitude
-    lon DOUBLE NOT NULL,                  -- Longitude
-    content_text TEXT NOT NULL,           -- Graffiti text content
-    attachments_json JSON,                -- Serialized multimedia attachments
-    is_pinned BOOLEAN DEFAULT FALSE,      -- Pinned flag for storage custody
-    raw_json JSON NOT NULL                -- Canonical JSON payload for P2P re-seeding
+    parent_signature VARCHAR,             -- Parent message signature (for thread graphs)
+    timestamp BIGINT NOT NULL,            -- UNIX timestamp (seconds)
+    geohash VARCHAR NOT NULL,             -- Spatial geohash cell (e.g. 'dr5reg6')
+    lat DOUBLE NOT NULL,                  -- Precise latitude
+    lon DOUBLE NOT NULL,                  -- Precise longitude
+    content_text TEXT NOT NULL,           -- Graffiti text content payload
+    attachments_json JSON,                -- Serialized multimedia attachments array
+    is_pinned BOOLEAN DEFAULT FALSE,      -- User flag for local custody override
+    raw_json JSON NOT NULL                -- Full canonical JSON payload for P2P re-seeding
 );
 
 CREATE INDEX IF NOT EXISTS idx_spatial ON graffitis(geohash);
@@ -140,9 +145,10 @@ CREATE INDEX IF NOT EXISTS idx_time ON graffitis(timestamp);
 CREATE INDEX IF NOT EXISTS idx_parent ON graffitis(parent_signature);
 ```
 
-### Core DuckDB Queries:
+### Required Storage Operations & Reference SQL Queries:
 
-1. **Space-Time Retrieval for Map Viewport:**
+1. **Space-Time Viewport Query:**
+   Clients must support querying graffitis by spatial prefix (`geohash`) and time range:
    ```sql
    SELECT * FROM graffitis
    WHERE geohash LIKE 'dr5re%'
@@ -150,7 +156,8 @@ CREATE INDEX IF NOT EXISTS idx_parent ON graffitis(parent_signature);
    ORDER BY timestamp DESC;
    ```
 
-2. **Recursive Conversation Thread Reconstruction:**
+2. **Recursive Spatial Thread Reconstruction:**
+   Clients must support traversing child-to-parent and parent-to-child links via `parent_signature`:
    ```sql
    WITH RECURSIVE thread AS (
        SELECT * FROM graffitis WHERE signature = :target_signature
@@ -161,9 +168,10 @@ CREATE INDEX IF NOT EXISTS idx_parent ON graffitis(parent_signature);
    SELECT * FROM thread ORDER BY timestamp ASC;
    ```
 
-3. **Storage Metabolism and Purge Policy (Configurable Limit):**
+3. **Storage Metabolism Purge Policy (Quota Management):**
+   When local storage quota is reached, clients MUST enforce local metabolism by purging the oldest non-immune messages:
    ```sql
-   -- Purge oldest messages that are neither pinned nor from trusted Handshake contacts
+   -- Purge oldest graffitis that are neither pinned nor from trusted Handshake contacts
    DELETE FROM graffitis
    WHERE is_pinned = FALSE
      AND author_pk NOT IN (SELECT public_key FROM trusted_handshakes)
@@ -176,9 +184,9 @@ CREATE INDEX IF NOT EXISTS idx_parent ON graffitis(parent_signature);
      );
    ```
 
-### Handshake Role (In-Person Validation) & Protection:
-*   **In-Person Handshake:** Direct exchange of public keys (e.g. face-to-face QR code scanning) stored locally in `trusted_handshakes(public_key, name, added_at)`.
-*   **Prominence & Immunity:** Messages authored by public keys in `trusted_handshakes` or flagged as `is_pinned = TRUE` are immune to automatic storage quota purges.
+### Handshake Trust Network & Storage Immunity:
+*   **In-Person Handshake Record:** Handshake contacts are stored locally in the relational contract `trusted_handshakes(public_key, name, added_at)`.
+*   **Storage Immunity:** Graffitis authored by keys present in `trusted_handshakes` or flagged as `is_pinned = TRUE` MUST BE EXEMPT from automatic storage metabolism purges.
 
 ---
 
