@@ -1,55 +1,59 @@
-# Protocolo Handshake: Especificación del Sistema Espacio-Temporal P2P
+# Handshake Protocol: Space-Time P2P System Specification
 
-**Versión:** `v0.1.0-draft` (Trabajo en Progreso)
+**Version:** `v0.2.0-draft` (Work in Progress)
 
 > [!WARNING]
-> Este documento representa un borrador activo del protocolo Handshake. La especificación no es definitiva y se encuentra en proceso de diseño y refinamiento, por lo que está sujeta a cambios estructurales importantes.
+> This document represents the official technical specification of the Handshake protocol. The specification undergoes continuous refinement.
 
-Este documento define la especificación técnica oficial del protocolo **Handshake** para asegurar la interoperabilidad entre diferentes implementaciones de nodos (como el cliente de escritorio en Python y el cliente Web en TypeScript).
-
----
-
-## Principio y Fundamento
-
-### 1. La Visión
-El auge de inteligencias artificiales capaces de imitar el comportamiento humano a la perfección diluye la línea entre lo real y lo sintético en el plano virtual. Ante la imposibilidad técnica de certificar la humanidad de una entidad digital de forma puramente abstracta en la web, Handshake propone una resistencia: **mantener los cuerpos en el mundo físico para validar y confirmar el mundo virtual**.
-
-En lugar de aislar a los individuos en "islas virtuales" gobernadas por algoritmos de optimización de atención y feeds infinitos, este protocolo utiliza el espacio físico y el tiempo real como el paisaje de validación. La información no viaja sin control hacia el usuario; el usuario debe explorar activamente el espacio y el tiempo para descubrir las huellas digitales.
-
-### 2. Intenciones y Filosofía del Protocolo
-*   **La Geografía como el Algoritmo:** No existen sistemas centralizados de recomendación ni ordenamientos sesgados. El único filtro de visibilidad y relevancia de un mensaje es la distancia física, el momento temporal y las relaciones orgánicas de confianza de quien lo lee.
-*   **Comunidades de Proximidad:** Romper la plaza pública global para retornar al intercambio a escala humana. Los usuarios interactúan y se comunican desde y dentro de sus vecindarios y trayectos cotidianos. Las ideas residen en los lugares físicos donde la gente realmente se reúne a conversar.
-*   **Economía de la Atención e Intencionalidad:** Incentivar un registro digital deliberado, artesanal y consciente, priorizando la relevancia de la comunicación y el contexto local sobre la saturación constante de información.
-*   **Soberanía de Datos Colectiva:** La infraestructura de almacenamiento y distribución es colectiva e independiente de silos corporativos. Cada nodo decide qué subconjunto de la memoria geográfica desea sembrar y preservar localmente en su disco, actuando como un custodio de la memoria histórica de su entorno.
+This document defines the technical specification of the **Handshake** protocol to ensure interoperability between clients (TypeScript Web frontend and Python desktop/CLI engine).
 
 ---
 
+## Rationale and Core Philosophy
 
-## 1. Identidad Criptográfica
-Cada usuario (peer) posee un par de claves asimétricas basadas en **Ed25519**:
-*   **Clave Privada (SK):** Utilizada para firmar digitalmente los mensajes creados. Debe mantenerse secreta.
-*   **Clave Pública (PK):** Utilizada como la identidad pública del usuario (`author_pk`) para verificar la autenticidad de sus mensajes.
+### 1. The Vision
+Most traditional networks are centered around abstract digital identity: profiles, accounts, followers, and digital reputation metrics. In an environment where distinguishing between humans, bots, or synthetic identities is irrelevant or impossible in the virtual realm, **Handshake shifts the center of gravity from users to messages**.
 
-### Formato de Portabilidad de Identidad (`.key`):
-Para permitir la importación y exportación de identidades entre clientes Web y de escritorio, el archivo JSON generado debe seguir estrictamente la nomenclatura *snake_case*:
+The network does not manage or validate virtual profiles. Instead, the system is a living landscape of **messages and digital graffitis anchored in exact space and time coordinates**.
+
+Human validation does not occur through digital verification algorithms, but through **real physical encounters**. The protocol encourages physical presence and proximity, while in the virtual realm the fundamental unit of memory is always the space-time trace (the message), not the user account or profile.
+
+### 2. Protocol Goals and Philosophy
+*   **The Message as a Sovereign Unit:** There are no personal walls, inflated account follower counts, or algorithmic feeds. There are space-time graffitis. A message exists and retains value based on its location, content, and the collective interest in preserving it.
+*   **Geography and Time as the Algorithm:** Visibility and discovery depend on geography and temporal moments. No attention optimization algorithms exist: to discover a digital trace, you must explore those coordinates.
+*   **Custody and Collective Seeding (Data Sovereignty):** The network does not rely on a centralized proprietary server. Anyone can seed messages, freely deciding which spatial memory parts to preserve, replicate, or purge from local storage as historical custodians.
+*   **Bridge to Physical Encounters:** Although the virtual network stores and exchanges messages regardless of abstract author identity, the protocol incentivizes real-world encounters as the genuine space for human trust validation.
+
+---
+
+## 1. Cryptographic Identity
+
+The protocol does not implement "user accounts", "registrations", or "profiles". Identity in Handshake is purely cryptographic, decentralized, and message-signature oriented:
+
+*   **Ed25519 Keypairs:** Every node or author uses an Ed25519 asymmetric keypair:
+    *   **Private Key (SK):** Local secret to digitally sign published graffitis. Stored strictly in client storage.
+    *   **Public Key (PK):** Author identifier (`author_pk`) used by the P2P swarm to verify message integrity and authenticity, ensuring it was not tampered with during transport.
+*   **Optional Pseudonymity:** Users can reuse keypairs for author consistency or generate ephemeral keys for isolated messages. The protocol does not link names, emails, or personal data to any key.
+
+### Portable Identity Format (`.key`):
+To enable sovereign import and export of keys between clients (Web, CLI, mobile) without server dependency:
 ```json
 {
-  "public_key": "clave_publica_en_hexadecimal_64_caracteres",
-  "private_key": "clave_privada_en_hexadecimal_64_o_128_caracteres"
+  "public_key": "hexadecimal_public_key_64_characters",
+  "private_key": "hexadecimal_private_key_64_or_128_characters"
 }
 ```
 
 ---
 
-## 2. Estructura del Mensaje (Schema)
-Todos los graffitis en la red se representan y se transmiten utilizando el formato de serialización JSON. El esquema consta de tres bloques principales: `header`, `location` y `content`.
+## 2. Message Schema
+
+All graffitis on the network are public, open, and immutable. They are serialized and transmitted using strict JSON formatting. The schema consists of three primary blocks: `header`, `location`, and `content`.
 
 ```json
 {
   "version": "1.0",
   "header": {
-    "type": "PUBLIC",
-    "owner_pk": null,
     "author_pk": "hex_public_key_32_bytes",
     "parent_signature": "hex_parent_signature_64_bytes_optional",
     "timestamp": 1712345678,
@@ -57,102 +61,147 @@ Todos los graffitis en la red se representan y se transmiten utilizando el forma
   },
   "location": {
     "geohash": "dr5reg6",
-    "proof": {
-      "type": "GPS",
-      "data": "40.712776,-74.005974"
+    "coordinates": {
+      "lat": 40.712776,
+      "lon": -74.005974
     }
   },
   "content": {
-    "text": "Contenido del graffiti",
+    "text": "Space-time anchored graffiti content text",
     "attachments": [
       {
-        "url": "https://example.com/imagen.jpg",
-        "sha256": "hash_sha256_hexadecimal_de_64_caracteres",
-        "mime_type": "image/jpeg"
+        "url": "https://example.com/audio.ogg",
+        "sha256": "sha256_hex_hash_64_characters",
+        "mime_type": "audio/ogg"
       }
     ]
   }
 }
 ```
 
-### Campos:
-*   `header.type`: Tipo de mensaje (`PUBLIC` para libre acceso en texto plano o `ANCHORED` para mensajes privados cifrados dirigidos a un destinatario específico).
-*   `header.owner_pk`: Clave pública (en formato hexadecimal de 32 bytes) del destinatario o propietario. Obligatorio si el tipo es `ANCHORED`, nulo si es `PUBLIC`.
-*   `header.author_pk`: Clave pública (en formato hexadecimal) del autor del graffiti.
-*   `header.parent_signature` (Opcional): Firma Ed25519 (string hexadecimal de 128 caracteres) del graffiti padre al que responde este mensaje. Nulo si el mensaje inicia un nuevo hilo.
-*   `header.timestamp`: Marca de tiempo UNIX (segundos).
-*   `header.signature`: Firma Ed25519 del objeto serializado en representación canónica (hexadecimal).
+### Fields:
+*   `header.author_pk`: Ed25519 public key (64 hex characters / 32 bytes) of the signing author.
+*   `header.parent_signature` (Optional): Ed25519 signature of the parent graffiti being replied to (`null` if initiating a new root conversation). Enables spatial conversation trees and graphs.
+*   `header.timestamp`: UNIX timestamp (seconds) when the graffiti was issued.
+*   `header.signature`: Ed25519 digital signature of the canonical serialized JSON object (excluding this signature field).
+*   `location.geohash`: Standard Geohash (configurable length, typically 5-7 characters) used to index and discover spatial peer swarms in the area.
+*   `location.coordinates`: High-precision geographical coordinates (`lat`, `lon`) for map rendering.
+*   `content.text`: Message text content (required, plain text or lightweight markdown).
+*   `content.attachments` (Optional): List of linked multimedia attachments. Each item contains `url`, `sha256` for cryptographic integrity verification, and `mime_type`.
 
-### Mensajes Anclados (`ANCHORED`) y Cifrado E2EE:
-Cuando el tipo de mensaje se define como `ANCHORED`:
-1.  **Cifrado de Extremo a Extremo (E2EE):** El texto contenido en `content.text` debe ser cifrado utilizando un esquema de clave pública/privada (como el cifrado autenticado de caja sellada, convirtiendo las llaves de firma Ed25519 a llaves de cifrado X25519).
-2.  **Distribución Ciega:** Los nodos del enjambre descargarán, almacenarán y seedearán el archivo del mensaje de forma normal como cualquier otro graffiti. Sin embargo, el contenido textual en `content.text` será ilegible para los transportadores. Solo el nodo que posea la clave privada correspondiente al `header.owner_pk` podrá descifrar y renderizar el mensaje en pantalla.
-*   `location.geohash`: Geohash que define la zona geográfica donde se ancla el mensaje.
-*   `location.proof`: Tipo de prueba de localización (`NONE`, `GPS`, `BLE`) y sus datos adicionales.
-*   `content.text`: Contenido textual del mensaje.
-*   `content.attachments` (Opcional): Lista de archivos multimedia adjuntos. Cada elemento contiene:
-    *   `url`: Dirección de descarga del archivo (HTTP, IPFS, Magnet Link).
-    *   `sha256`: Hash SHA-256 del archivo para verificación de integridad (obligatorio).
-    *   `mime_type`: Tipo de contenido del archivo (ej. `image/png`, `audio/ogg`, `video/mp4`).
+### Canonical Serialization for Signature Verification:
+To generate or verify the Ed25519 signature:
+1. Take the message JSON object **excluding the `header.signature` field**.
+2. Recursively sort all object keys alphabetically (`sort_keys=True` in Python / alphabetical object property sorting in TypeScript).
+3. Compactify the normalized JSON string without superfluous whitespace, encode as UTF-8, and sign/verify with the Ed25519 keypair.
 
-### Serialización Canónica para la Firma:
-Para generar o verificar la firma, se toma el JSON del mensaje **excluyendo el campo `header.signature`**, y se ordena de forma recursiva por sus claves (`sort_keys=True` en Python / ordenamiento alfabético en JS). El texto resultante se codifica en UTF-8 antes de firmar.
-
-### Extensibilidad y Compatibilidad Futura:
-Para garantizar que el protocolo pueda evolucionar sin romper la compatibilidad entre clientes de diferentes versiones:
-*   **Campos Desconocidos:** Si un cliente recibe un mensaje que contiene campos no definidos en su versión local del protocolo, debe ignorar dichos campos para el procesamiento o renderizado visual local, pero **debe preservarlos intactos** en el archivo JSON original al guardarlo en el disco y al retransmitirlo a otros peers.
-*   **Impacto en la Firma:** Al calcular la serialización canónica para verificar la firma, todos los campos (incluidos los desconocidos) deben ser incluidos y ordenados de forma recursiva. Eliminar o alterar cualquier campo desconocido invalidará la firma criptográfica Ed25519 del mensaje original.
+### Extensibility and Data Preservation:
+*   **Unknown Fields:** If a client receives a message containing unknown schema fields from newer protocol versions, it must ignore them during local rendering but **must preserve them intact** in local storage JSON files and during P2P swarm retransmission.
+*   **Signature Immutability:** Modifying, omitting, or reordering any field invalidates the original Ed25519 signature.
 
 ---
 
-## 3. Agrupación en Enjambres (Swarm Grouping)
-Los graffitis no se distribuyen ni se "seedean" de forma individual para evitar la saturación de conexiones. En su lugar, se agrupan en **directorios espaciales y temporales**:
+## 3. Swarm Grouping
 
-1.  **Resolución Espacial:** El mapa se divide en celdas usando **Geohash de precisión 7** (aprox. 150m x 150m).
-2.  **Resolución Temporal:** El tiempo se agrupa en **épocas mensuales** en formato `YYYY-MM`.
-3.  **Generación de InfoHash:** Se genera un identificador único SHA-1 determinista a partir del geohash y la época:
+Graffitis are not transmitted in isolation; they are grouped into **spatial and temporal directories**:
+
+1.  **Spatial Resolution:** Territory is partitioned into spatial cells using **Geohash precision 6 or 7** (approx. ~1.2 km to ~150 meters).
+2.  **Temporal Resolution:** Time is partitioned into **monthly epochs** in `YYYY-MM` format.
+3.  **InfoHash Generation:** A deterministic SHA-1 identifier is computed for the swarm:
     $$\text{InfoHash} = \text{SHA1}(\text{geohash} + ":" + \text{epoch})$$
-4.  **Sedeo:** El enjambre de BitTorrent (o los canales WebRTC asociados) intercambia el directorio completo asociado a dicho `InfoHash`. Cada archivo dentro del directorio representa un mensaje individual nombrado de la forma:
+4.  **Collective Seeding:** Peer connections (WebRTC on Web or P2P desktop) exchange messages belonging to the given `InfoHash`. Each file is saved locally as:
     `{timestamp}_{author_pk_prefix}.msg`
-5.  **Política de Sedeo Histórico:** Los nodos no limitan su actividad de sembrado únicamente al mes en curso. Un nodo sembrará activamente tanto la época actual como todas las épocas pasadas (meses anteriores) que posea almacenadas localmente para sus celdas geográficas de interés, actuando como un custodio histórico del lugar, siempre y cuando no se superen los límites globales de almacenamiento impuestos por su metabolismo local.
+5.  **Historical Custody:** Nodes can seed both current and past epochs stored locally, acting as custodians of their geographic area's history.
 
 ---
 
-## 4. Reglas de Visibilidad y Confianza (El Handshake)
-*   **Acceso Público y Abierto:** Cualquier usuario que consulte o descargue el enjambre correspondiente a un Geohash y una época determinada tendrá acceso visual a todos los graffitis públicos dentro de esa celda, sin limitaciones de distancia respecto a su posición en el mapa.
-*   **El Rol de la Confianza (Handshake):**
-    1.  **Prioridad y Prominencia Visual:** Los graffitis cuyos autores figuren en la lista de confianza criptográfica del usuario (nodos con los que se ha realizado un Handshake) se mostrarán de forma destacada y prioritaria en la interfaz de usuario para diferenciarlos del flujo general.
-    2.  **Sedeo Automático y Preservación:** Los nodos descargarán y sembrarán (seedearán) prioritariamente los graffitis creados por personas de su red de confianza. Estos mensajes reciben el trato de archivos protegidos (exentos del metabolismo de limpieza).
-*   **Limpieza (Metabolismo de Almacenamiento):** Cada enjambre local mantiene un límite (ej. 100 mensajes). Cuando se alcanza el límite, el nodo purga automáticamente los mensajes de autores desconocidos más antiguos para liberar espacio. Los mensajes de contactos de confianza (con Handshake verificado) quedan protegidos y nunca son eliminados automáticamente.
+## 4. Sovereign Storage, Metabolism, and Embedded DuckDB
+
+The protocol adopts **DuckDB** as the standard embedded OLAP database engine for both Web clients (`@duckdb/duckdb-wasm` in IndexedDB) and desktop/server clients (`duckdb` in Python).
+
+### Local Database Schema (`graffitis`)
+```sql
+CREATE TABLE IF NOT EXISTS graffitis (
+    signature VARCHAR PRIMARY KEY,         -- Unique Ed25519 message signature
+    author_pk VARCHAR NOT NULL,           -- Author public key
+    parent_signature VARCHAR,             -- Parent message signature (for threads)
+    timestamp BIGINT NOT NULL,            -- UNIX timestamp
+    geohash VARCHAR NOT NULL,             -- Spatial geohash (e.g. 'dr5reg6')
+    lat DOUBLE NOT NULL,                  -- Latitude
+    lon DOUBLE NOT NULL,                  -- Longitude
+    content_text TEXT NOT NULL,           -- Graffiti text content
+    attachments_json JSON,                -- Serialized multimedia attachments
+    is_pinned BOOLEAN DEFAULT FALSE,      -- Pinned flag for storage custody
+    raw_json JSON NOT NULL                -- Canonical JSON payload for P2P re-seeding
+);
+
+CREATE INDEX IF NOT EXISTS idx_spatial ON graffitis(geohash);
+CREATE INDEX IF NOT EXISTS idx_time ON graffitis(timestamp);
+CREATE INDEX IF NOT EXISTS idx_parent ON graffitis(parent_signature);
+```
+
+### Core DuckDB Queries:
+
+1. **Space-Time Retrieval for Map Viewport:**
+   ```sql
+   SELECT * FROM graffitis
+   WHERE geohash LIKE 'dr5re%'
+     AND timestamp BETWEEN :start_ts AND :end_ts
+   ORDER BY timestamp DESC;
+   ```
+
+2. **Recursive Conversation Thread Reconstruction:**
+   ```sql
+   WITH RECURSIVE thread AS (
+       SELECT * FROM graffitis WHERE signature = :target_signature
+       UNION ALL
+       SELECT g.* FROM graffitis g
+       JOIN thread t ON g.parent_signature = t.signature
+   )
+   SELECT * FROM thread ORDER BY timestamp ASC;
+   ```
+
+3. **Storage Metabolism and Purge Policy (Configurable Limit):**
+   ```sql
+   -- Purge oldest messages that are neither pinned nor from trusted Handshake contacts
+   DELETE FROM graffitis
+   WHERE is_pinned = FALSE
+     AND author_pk NOT IN (SELECT public_key FROM trusted_handshakes)
+     AND signature IN (
+         SELECT signature FROM graffitis
+         WHERE is_pinned = FALSE
+           AND author_pk NOT IN (SELECT public_key FROM trusted_handshakes)
+         ORDER BY timestamp ASC
+         LIMIT :purge_count
+     );
+   ```
+
+### Handshake Role (In-Person Validation) & Protection:
+*   **In-Person Handshake:** Direct exchange of public keys (e.g. face-to-face QR code scanning) stored locally in `trusted_handshakes(public_key, name, added_at)`.
+*   **Prominence & Immunity:** Messages authored by public keys in `trusted_handshakes` or flagged as `is_pinned = TRUE` are immune to automatic storage quota purges.
 
 ---
 
-## 5. Descubrimiento Social de Enjambres (Social Discovery)
-Para maximizar la resiliencia y la propagación de los graffitis en la red P2P, los nodos implementan un modelo de **Descubrimiento Social Abierto**:
-*   **Intercambio de Relays:** Al conectarse con cualquier peer (sea a través de UDP en el cliente de escritorio o WebRTC en el cliente Web), los nodos anuncian de forma abierta la lista completa de `relays` (los InfoHashes de las celdas geográficas que están sembrando activamente en su almacenamiento local).
-*   **Sedeo por Confianza Solidaria:** Cuando un nodo detecta que un peer verificado de su lista de contactos (Handshake) está sembrando determinados enjambres distantes, el nodo local se une automáticamente a dichos enjambres para actuar como sembrador (seeder) de respaldo, incluso si el nodo local no se encuentra físicamente en esas ubicaciones.
+## 5. Social Swarm Discovery (Social Relays)
+*   **Relay Announcements:** Upon connecting with peers, clients can announce the list of spatial cells (`InfoHashes`) they actively seed.
+*   **Solidarity Seeding:** If a node detects that a contact from its Handshake trust network seeds distant swarms, it can elect to act as a backup seeder to support historic preservation.
 
 ---
 
-## 6. Validación de Ubicación y Pruebas de Co-presencia
-El protocolo define un enfoque flexible para el anclaje físico y temporal de la información:
-*   **Carácter Declarativo:** La ubicación geográfica (Geohash y coordenadas específicas) y la marca de tiempo (timestamp) de un graffiti son **declarativas e intencionales**. El autor decide soberanamente en qué punto del espacio-tiempo desea plasmar su mensaje, equiparándose a la acción física y artística de pintar una pared real.
-*   **Prueba de Co-presencia (Opcional):** Como capa de veracidad física añadida, el emisor puede incluir una prueba de co-presencia en el campo `location.proof` con la siguiente estructura:
-    *   `proof.type`: `"CO-PRESENCE"`
-    *   `proof.data`: Un sub-objeto JSON que contiene la firma criptográfica Ed25519 de uno o más peers testigos (claves públicas vecinas descubiertas localmente vía Bluetooth/BLE o WebRTC en el mismo instante y zona).
-*   **Validación y Visualización:** Los clientes de lectura aceptan todos los graffitis válidos, pero las interfaces de usuario (como el mapa) pueden destacar con marcas visuales distintivas (por ejemplo, "Verificado por Vecinos") a aquellos graffitis que incorporen pruebas de co-presencia verificables.
+## 6. Declarative Space-Time Nature
+*   **Declarative Coordinates:** Location (`geohash` and coordinates) and time (`timestamp`) of a graffiti are declarative and intentional: the author chooses to place a trace at those coordinates, akin to painting a physical wall.
+*   **Optional Co-Presence Proof:** A graffiti can optionally include witness peer signatures (`location.proof`) to verify simultaneous physical co-presence.
 
 ---
 
-## 7. Protocolo del Tracker y Ofuscación de Ubicación (Signaling)
-El tracker (o servidor de señalización) actúa únicamente como facilitador para conectar peers geográficamente cercanos. Para mitigar riesgos de rastreo de ubicación, los clientes disponen de dos modalidades de registro:
-1.  **Modo Preciso (Opción A):** El cliente envía su Geohash completo de precisión 7 (ej. `"dr5reg6"`). Esto permite que el tracker lo empareje de forma exacta y que sus vecinos puedan ver y renderizar su posición precisa en la grilla del mapa.
-2.  **Modo Ofuscado (Opción C):** El cliente decide preservar su privacidad y envía al tracker únicamente los primeros 5 caracteres de su Geohash (ej. `"dr5re"`). El tracker lo emparejará con los peers del área general (zona de ~5km) para permitir el establecimiento de la conexión WebRTC, pero los vecinos en el enjambre solo sabrán que está presente en la vecindad general, sin conocer su ubicación exacta.
+## 7. Tracker and Spatial Privacy (Signaling)
+The tracker acts exclusively as a signaling server to connect peers interested in the same space-time coordinates:
+*   **Zone Connections:** Clients send their Geohash (full or truncated for privacy) to receive active peers in the area and establish direct WebRTC connections.
+*   **No User Tracking:** The tracker does not maintain user accounts or track real-time user movement; the only visible, persistent presence in the world is the graffitis themselves.
 
 ---
 
-## 8. Hilos de Conversación Espacial (Message Threads)
-Para permitir discusiones e interacciones encadenadas, el protocolo implementa un modelo de **respuestas anidadas (estructura en árbol)**:
-*   **Vínculo al Padre (`parent_signature`):** Cualquier graffiti que constituya una respuesta a un mensaje existente debe incluir en su cabecera el campo `"parent_signature"` conteniendo la firma Ed25519 exacta del mensaje padre al que replica.
-*   **Independencia Espacial:** El mensaje de respuesta se ancla a la coordenada geográfica y temporal donde el autor de la respuesta se encuentra físicamente al momento de escribir (su propio Geohash y época). Esto permite que una conversación se mueva físicamente a lo largo de celdas adyacentes o trayectos.
-*   **Reconstrucción del Hilo:** Los clientes cargan todos los graffitis de las celdas visibles o sincronizadas y reconstruyen localmente el árbol de la conversación emparejando cada mensaje con su correspondiente padre a través de su firma criptográfica. Si un nodo no posee el mensaje padre en su almacenamiento local, puede solicitarlo de forma prioritaria a los peers utilizando los protocolos de sincronización.
+## 8. Spatial Conversation Threads
+*   **Parent Linking (`parent_signature`):** Replying to a graffiti includes the parent message's Ed25519 signature in the header.
+*   **Itinerant Conversations:** Each reply is anchored at the exact coordinates where the author is located when replying, tracing a physical and temporal trail across the map.
+*   **Decentralized Tree Reconstruction:** The client connects messages and reconstructs the thread tree locally using cryptographic signatures. If a node lacks a parent message, it can request it with priority from swarm peers.

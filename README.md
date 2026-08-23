@@ -1,17 +1,17 @@
 # Handshake: Space-Time Conexions
 
 ## The Vision
-**Handshake** is an exploration of keeping humans physically and temporally connected in a digital world. Instead of infinite scrolling feeds decided by algorithms, Handshake proposes a network of **digital graffitis anchored in exact physical coordinates and time**.
+**Handshake** is a decentralized, space-time anchored communication network where the central focus is **the message, not user profiles or accounts**. 
 
-Users leave messages in specific locations. To discover them, you must explore those coordinates (either physically or virtually through the space-time map). The system is built on a peer-to-peer (P2P) BitTorrent-like architecture, where users "seed" the graffitis they encounter, keeping them alive in the network.
+Rather than managing abstract digital identities or infinite algorithm-driven feeds, Handshake proposes a landscape of **digital graffitis anchored in exact coordinates and time**. Physical encounter validates human relationships, but the virtual network's core unit of value and memory is the space-time trace itself—seeded, preserved, and explored collectively through peer-to-peer swarms.
 
 ## The "Handshake" Mechanic
-The core organizing principle of visibility is the **Handshake**—a cryptographic validation of trust and presence.
+The core organizing principle of trust and custody is the **Handshake**—a cryptographic validation of trust and presence.
 
-Everyone can see the messages left in the world, but **visibility distance and prominence** are dictated by Handshakes:
-1. **Local by Default:** A new graffiti is strictly local. You can only see it if your viewport (or physical GPS) is very close to its exact space-time coordinates.
-2. **The Handshake Multiplier (Social Proof):** If a message accumulates many Handshakes (validations from users who encounter it), its visibility radius expands. It becomes a beacon that can be seen from much further away.
-3. **Your Trust Network:** Messages left by people you have personally "Handshaked" with (your trusted contacts) will always be highlighted and visible to you from a much greater distance. 
+Everyone can explore the messages left in the world, but **prominence, priority seeding, and storage custody** are governed by Handshakes:
+1. **Local by Default:** A new graffiti is strictly local, discovered when exploring its exact space-time coordinates.
+2. **Prominence & Storage Immunity:** Messages left by trusted contacts (or manually pinned) receive visual priority and are granted immunity against automatic local storage metabolism purges.
+3. **Your Trust Network:** Messages created by your trusted contacts (exchanged via physical QR Handshake) are prioritized during P2P seeding and highlighted across your viewport.
 
 ## Architecture: The Web MVP
 
@@ -20,41 +20,25 @@ We are building a Web-first MVP that leverages browser technologies for a decent
 ```mermaid
 graph TD
     User((User)) --> WebApp[Web Frontend - Vite/React]
+    WebApp --> DuckDBWasm[DuckDB WASM / IndexedDB]
     WebApp --> WebRTC[WebRTC P2P Swarm]
     WebApp --> Tracker[Django Space-Time Tracker]
     
-    subgraph "The Swarm (Browsers)"
+    subgraph "The Swarm & Local Storage"
         WebRTC <-->|Direct P2P Seeding| OtherPeers[Other Users in the same Zone]
+        DuckDBWasm <-->|Sovereign Storage & Queries| LocalDB[(Local DuckDB Store)]
     end
     
-    subgraph "Backend Infrastructure"
-        Tracker --> Engine[Strata Core Engine - Python]
+    subgraph "Backend & Engine Infrastructure"
+        Tracker --> Engine[Strata Core Engine - Python / DuckDB]
     end
     
     OtherPeers -.->|Signaling| Tracker
 ```
 
 ### Key Components
-1. **Django (The Space-Time Tracker):** Django does not act as a centralized database for all messages. Instead, it acts as a BitTorrent Tracker. When you navigate to a coordinate on the map, Django connects you with other users (peers) exploring the same area.
+1. **Django (The Space-Time Tracker):** Django does not act as a centralized database for all messages. Instead, it acts as a BitTorrent Tracker. When you navigate to a coordinate on themap, Django connects you with other users (peers) exploring the same area.
 2. **Web Frontend (Vite/React + WebRTC):** Provides a rich, premium interface to navigate space and a time-slider to explore the past. Once Django connects you to peers, your browser downloads and seeds the graffitis directly from them via WebRTC.
-3. **Strata (The Agnostic Engine):** The pure-Python core logic (`src/strata`). It handles the validation, cryptographic rules, and data structures of the space-time conexions, remaining independent of the web transport layer.
-
-## Roadmap
-
-### Hito 1 & 2 (Foundations)
-- [x] Physical Persistence & Archaeological Scan logic.
-- [x] Unified Engine concept.
-- [x] Identity Manager & core Handshake Protocol logic.
-
-### Hito 3: The Web Pivot (Completado)
-- [x] **Django Tracker:** Implement the signaling server for spatial-temporal peer discovery.
-- [x] **Web MVP UI:** Build the map and time-slider interface.
-- [x] **WebRTC Integration:** Implement browser-to-browser graffiti seeding.
-- [x] **Visibility Mechanics:** Integrate the "Handshake multiplier" logic (now open public access with visual prominence and priority seeding for trusted peers).
-- [x] **No-Login & Local Seeding:** Permitir seleccionar una carpeta local desde la web para seedear graffitis en vivo (File System API), utilizando identidades portables mediante la exportación/importación de un archivo `.key`.
-
-### Hito 4: Hilos de Conversación Espacial (En Progreso)
-- [x] **Graffiti Connections:** Encontrar la manera de conectar graffitis (hilos de conversación/threads), permitiendo seguir un hilo de discusión entre distintos graffitis localizados en diferentes partes de la red.
-- [ ] **Multimedia Graffitis:** Añadir soporte y compatibilidad para subir e integrar contenidos multimedia (audios, videos e imágenes) dentro de los graffitis espaciales.
-
+3. **DuckDB (Embedded Storage Engine):** Serves as the embedded OLAP database engine both in browser (`@duckdb/duckdb-wasm` over IndexedDB) and backend/CLI (`duckdb` in Python). It powers fast spatial-temporal queries, recursive thread reconstruction, and local storage metabolism.
+4. **Strata (The Agnostic Engine):** The pure-Python core logic (`src/strata`). It handles validation, Ed25519 cryptographic identity, canonical JSON signing, and protocol data structures independent of the transport layer.
 
