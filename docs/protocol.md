@@ -48,7 +48,7 @@ To enable sovereign import and export of keys between clients (Web, CLI, mobile)
 
 ## 2. Message Schema
 
-All graffitis on the network are public, open, and immutable. They are serialized and transmitted using strict JSON formatting. The schema consists of three primary blocks: `header`, `location`, and `content`.
+All graffitis on the network are public, open, and immutable. They are serialized and transmitted using strict JSON formatting. The schema consists of three primary blocks: `header`, `anchor`, and `content`.
 
 ```json
 {
@@ -56,10 +56,10 @@ All graffitis on the network are public, open, and immutable. They are serialize
   "header": {
     "author_pk": "hex_public_key_32_bytes",
     "parent_signature": "hex_parent_signature_64_bytes_optional",
-    "timestamp": 1712345678,
     "signature": "hex_signature_64_bytes"
   },
-  "location": {
+  "anchor": {
+    "timestamp": 1712345678,
     "geohash": "dr5reg6",
     "coordinates": {
       "lat": 40.712776,
@@ -82,10 +82,10 @@ All graffitis on the network are public, open, and immutable. They are serialize
 ### Fields:
 *   `header.author_pk`: Ed25519 public key (64 hex characters / 32 bytes) of the signing author.
 *   `header.parent_signature` (Optional): Ed25519 signature of the parent graffiti being replied to (`null` if initiating a new root conversation). Enables spatial conversation trees and graphs.
-*   `header.timestamp`: UNIX timestamp (seconds) when the graffiti was issued.
 *   `header.signature`: Ed25519 digital signature of the canonical serialized JSON object (excluding this signature field).
-*   `location.geohash`: Standard Geohash (configurable length, typically 5-7 characters) used to index and discover spatial peer swarms in the area.
-*   `location.coordinates`: High-precision geographical coordinates (`lat`, `lon`) for map rendering.
+*   `anchor.timestamp`: UNIX timestamp (seconds) when the graffiti was issued.
+*   `anchor.geohash`: Standard Geohash (configurable length, typically 5-7 characters) used to index and discover spatial peer swarms in the area.
+*   `anchor.coordinates`: High-precision geographical coordinates (`lat`, `lon`) for map rendering.
 *   `content.text`: Message text content (required, plain text or lightweight markdown).
 *   `content.attachments` (Optional): List of linked multimedia attachments. Each item contains `url`, `sha256` for cryptographic integrity verification, and `mime_type`.
 
@@ -190,7 +190,7 @@ CREATE INDEX IF NOT EXISTS idx_parent ON graffitis(parent_signature);
 
 ## 6. Declarative Space-Time Nature
 *   **Declarative Coordinates:** Location (`geohash` and coordinates) and time (`timestamp`) of a graffiti are declarative and intentional: the author chooses to place a trace at those coordinates, akin to painting a physical wall.
-*   **Optional Co-Presence Proof:** A graffiti can optionally include witness peer signatures (`location.proof`) to verify simultaneous physical co-presence.
+*   **Optional Co-Presence Proof:** A graffiti can optionally include witness peer signatures (`anchor.proof`) to verify simultaneous physical co-presence.
 
 ---
 
@@ -205,3 +205,4 @@ The tracker acts exclusively as a signaling server to connect peers interested i
 *   **Parent Linking (`parent_signature`):** Replying to a graffiti includes the parent message's Ed25519 signature in the header.
 *   **Itinerant Conversations:** Each reply is anchored at the exact coordinates where the author is located when replying, tracing a physical and temporal trail across the map.
 *   **Decentralized Tree Reconstruction:** The client connects messages and reconstructs the thread tree locally using cryptographic signatures. If a node lacks a parent message, it can request it with priority from swarm peers.
+
