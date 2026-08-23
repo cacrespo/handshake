@@ -42,23 +42,3 @@ graph TD
 3. **DuckDB (Embedded Storage Engine):** Serves as the embedded OLAP database engine both in browser (`@duckdb/duckdb-wasm` over IndexedDB) and backend/CLI (`duckdb` in Python). It powers fast spatial-temporal queries, recursive thread reconstruction, and local storage metabolism.
 4. **Strata (The Agnostic Engine):** The pure-Python core logic (`src/strata`). It handles validation, Ed25519 cryptographic identity, canonical JSON signing, and protocol data structures independent of the transport layer.
 
-## Roadmap
-
-### Hito 1 & 2 (Foundations)
-- [x] Physical Persistence & Archaeological Scan logic.
-- [x] Unified Engine concept & Ed25519 Cryptographic Identity.
-- [x] Identity Manager (`.key` export/import) & core Handshake Protocol logic.
-
-### Hito 3: The Web Pivot (Completado)
-- [x] **Django Tracker:** Implement the signaling server for spatial-temporal peer discovery.
-- [x] **Web MVP UI:** Build the map and time-slider interface.
-- [x] **WebRTC Integration:** Implement browser-to-browser graffiti seeding.
-- [x] **Visibility Mechanics & DuckDB Storage:** Integrate open public access with visual prominence, DuckDB embedded engine, and priority seeding for trusted peers.
-- [x] **No-Login & Sovereign Storage:** Allow selecting local folders / browser storage for seeding graffitis live, using portable identities via `.key` file export/import.
-
-### Hito 4: Hilos de Conversación Espacial & Multimedia (En Progreso)
-- [x] **Graffiti Connections (Spatial Threads):** Connect graffitis via `parent_signature`, enabling recursive discussion trees that trace physical and temporal paths across the map.
-- [ ] **Multimedia Graffitis:** Add support for attaching multimedia content (audio, video, images) with SHA-256 integrity verification (`content.attachments`).
-
-
-
