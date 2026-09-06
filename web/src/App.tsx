@@ -969,8 +969,7 @@ export default function App() {
                   onClick={(e) => {
                     e.stopPropagation();
                     setReplyingTo(node);
-                    const inputEl = document.querySelector(".timeline-input-el") as HTMLInputElement;
-                    if (inputEl) inputEl.focus();
+                    setIsComposerOpen(true);
                   }}
                 >
                   💬 Responder
