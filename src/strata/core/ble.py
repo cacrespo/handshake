@@ -69,6 +69,15 @@ class BleakHAL(BaseBLE):
         try:
             self._loop.run_forever()
         finally:
+            try:
+                # Cancel all pending tasks cleanly
+                pending = asyncio.all_tasks(self._loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    self._loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            except Exception:
+                pass
             self._loop.close()
 
     def start_advertising(self, data: bytes):
