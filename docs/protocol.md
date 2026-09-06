@@ -2,10 +2,8 @@
 
 **Version:** `v0.2.0-draft` (Work in Progress)
 
-> [!WARNING]
-> This document represents the official technical specification of the Handshake protocol. The specification undergoes continuous refinement.
-
-This document defines the technical specification of the **Handshake** protocol to ensure interoperability between clients (TypeScript Web frontend and Python desktop/CLI engine).
+> [!NOTE]
+> This document represents the official technical specification of the Handshake protocol. It defines message schemas, cryptographic identity, sovereign storage, and wire protocols to ensure interoperability across clients (TypeScript Web frontend, mobile apps, and Python engine).
 
 ---
 
@@ -21,6 +19,7 @@ Human validation does not occur through digital verification algorithms, but thr
 ### 2. Protocol Goals and Philosophy
 *   **The Message as a Sovereign Unit:** There are no personal walls, inflated account follower counts, or algorithmic feeds. There are space-time graffitis. A message exists and retains value based on its location, content, and the collective interest in preserving it.
 *   **Geography and Time as the Algorithm:** Visibility and discovery depend on geography and temporal moments. No attention optimization algorithms exist: to discover a digital trace, you must explore those coordinates.
+*   **Sovereign Space-Time Placement (Past, Present & Future):** Both location and timestamp are declarative, expressive choices of the author. An author can leave a message anchored right now, in the past (historical documentation), or in the future (future rendezvous, time capsules, announcements).
 *   **Custody and Collective Seeding (Data Sovereignty):** The network does not rely on a centralized proprietary server. Anyone can seed messages, freely deciding which spatial memory parts to preserve, replicate, or purge from local storage as historical custodians.
 *   **Bridge to Physical Encounters:** Although the virtual network stores and exchanges messages regardless of abstract author identity, the protocol incentivizes real-world encounters as the genuine space for human trust validation.
 
@@ -64,6 +63,10 @@ All graffitis on the network are public, open, and immutable. They are serialize
     "coordinates": {
       "lat": 40.712776,
       "lon": -74.005974
+    },
+    "proof": {
+      "type": "GPS",
+      "data": "40.712776,-74.005974"
     }
   },
   "content": {
@@ -82,10 +85,11 @@ All graffitis on the network are public, open, and immutable. They are serialize
 ### Fields:
 *   `header.author_pk`: Ed25519 public key (64 hex characters / 32 bytes) of the signing author.
 *   `header.parent_signature` (Optional): Ed25519 signature of the parent graffiti being replied to (`null` if initiating a new root conversation). Enables spatial conversation trees and graphs.
-*   `header.timestamp`: UNIX timestamp (seconds) when the graffiti was issued.
+*   `header.timestamp`: UNIX timestamp (seconds) when the graffiti is anchored in time.
 *   `header.signature`: Ed25519 digital signature of the canonical serialized JSON object (excluding this signature field).
-*   `location.geohash`: Standard Geohash (configurable length, typically 5-7 characters) used to index and discover spatial peer swarms in the area.
+*   `location.geohash`: Standard Geohash (precision 6 or 7) used to index and discover spatial peer swarms in the area.
 *   `location.coordinates`: High-precision geographical coordinates (`lat`, `lon`) for map rendering.
+*   `location.proof` (Optional): Spatial or co-presence proof (`type`: `"GPS"`, `"WITNESS_SWARM"`, or `"NONE"`).
 *   `content.text`: Message text content (required, plain text or lightweight markdown).
 *   `content.attachments` (Optional): List of linked multimedia attachments. Each item contains `url`, `sha256` for cryptographic integrity verification, and `mime_type`.
 
@@ -101,25 +105,167 @@ To generate or verify the Ed25519 signature:
 
 ---
 
-## 3. Swarm Grouping
+## 3. Sovereign Declarative Space-Time (Past, Present & Future)
 
-Graffitis are not transmitted in isolation; they are grouped into **spatial and temporal directories**:
+A cornerstone of the Handshake protocol is that **both space and time are expressive, sovereign choices of the creator**:
 
-1.  **Spatial Resolution:** Territory is partitioned into spatial cells using **Geohash precision 6 or 7** (approx. ~1.2 km to ~150 meters).
-2.  **Temporal Resolution:** Time is partitioned into **monthly epochs** in `YYYY-MM` format.
-3.  **InfoHash Generation:** A deterministic SHA-1 identifier is computed for the swarm:
-    $$\text{InfoHash} = \text{SHA1}(\text{geohash} + ":" + \text{epoch})$$
-4.  **Collective Seeding:** Peer connections (WebRTC on Web or P2P desktop) exchange messages belonging to the given `InfoHash`. Each file is saved locally as:
-    `{timestamp}_{author_pk_prefix}.msg`
-5.  **Historical Custody:** Nodes can seed both current and past epochs stored locally, acting as custodians of their geographic area's history.
+1. **Declarative Coordinates:** Leaving a graffiti is intentional, akin to painting a specific physical wall. The author chooses where in the geographical landscape the trace is placed.
+2. **Declarative Time (Writing to Future & Past):**
+   - **Future Graffitis:** An author can anchor a message in a future timestamp (e.g., an invitation to a physical meet-up next Saturday, a time capsule, a prediction, or a scheduled announcement). The message will be discovered by peers exploring that future date on the temporal timeline.
+   - **Historical Anchors:** An author can anchor a message in a past timestamp (e.g., chronicling a historical event that occurred at that location).
+3. **No Artificial Rejection:** Swarm peers and trackers **do not reject** messages whose `timestamp` lies ahead of or behind the node's local system clock. Validity is determined solely by cryptographic Ed25519 signature integrity and canonical payload verification.
 
 ---
 
-## 4. Sovereign Storage, Metabolism, and Embedded DuckDB
+## 4. Tracker Signaling Wire Protocol (WebSocket)
 
-The protocol adopts **DuckDB** as the standard embedded OLAP database engine for both Web clients (`@duckdb/duckdb-wasm` in IndexedDB) and desktop/server clients (`duckdb` in Python).
+The Django Space-Time Tracker serves exclusively as a decentralized matchmaking and signaling server. It does not store messages or track user accounts; it connects peers interested in the same spatial zones (`geohash[:5]`, approx. 4.9 km × 4.9 km).
 
-### Local Database Schema (`graffitis`)
+**Endpoint:** `ws://<host>:<port>/ws/tracker/`
+
+### Message Types:
+
+#### 1. Peer Registration (`register`)
+Sent by the client upon connecting or moving to a new spatial cell:
+```json
+{
+  "type": "register",
+  "peer_id": "ephemeral_client_uuid_or_pubkey_prefix",
+  "geohash": "69y7pg3"
+}
+```
+
+#### 2. Nearby Peer List (`peer_list`)
+Sent by the Tracker back to the registering client containing all active peers in the matching zone (`geohash[:5]`):
+```json
+{
+  "type": "peer_list",
+  "peers": [
+    { "peer_id": "peer_abc123", "geohash": "69y7pba" },
+    { "peer_id": "peer_xyz789", "geohash": "69y7pff" }
+  ]
+}
+```
+
+#### 3. Swarm Presence Events (`peer_joined` / `peer_left`)
+Broadcast by the Tracker to all active peers in the same spatial room when a peer enters or leaves:
+```json
+// Peer entered
+{
+  "type": "peer_joined",
+  "peer_id": "peer_abc123",
+  "geohash": "69y7pba"
+}
+
+// Peer departed
+{
+  "type": "peer_left",
+  "peer_id": "peer_abc123"
+}
+```
+
+#### 4. WebRTC Signaling Relay (`signal`)
+Relayed transparently through the Tracker to negotiate direct P2P WebRTC data channels between peers:
+```json
+// SDP Offer / Answer
+{
+  "type": "signal",
+  "target": "target_peer_id",
+  "signal": {
+    "sdp": {
+      "type": "offer", // or "answer"
+      "sdp": "v=0\r\no=- ..."
+    }
+  }
+}
+
+// ICE Candidate
+{
+  "type": "signal",
+  "target": "target_peer_id",
+  "signal": {
+    "candidate": {
+      "candidate": "candidate:1 1 UDP ...",
+      "sdpMid": "0",
+      "sdpMLineIndex": 0
+    }
+  }
+}
+```
+
+---
+
+## 5. WebRTC DataChannel Synchronization Protocol (`strata-sync`)
+
+Once a direct WebRTC connection is established between two peers, communication occurs over an RTCDataChannel labeled `"strata-sync"`.
+
+### DataChannel Message Exchange:
+
+#### 1. Synchronization Request (`request_sync`)
+Upon channel opening (`onopen`), the initiating client requests graffitis for its current spatial viewport:
+```json
+{
+  "type": "request_sync",
+  "geohash": "69y7p"
+}
+```
+
+#### 2. Synchronization Response & Live Broadcast (`sync_response`)
+Sent in response to `request_sync` or broadcast to all connected swarm peers whenever a new graffiti is authored or seeded locally:
+```json
+{
+  "type": "sync_response",
+  "graffitis": [
+    {
+      "version": "1.0",
+      "header": {
+        "author_pk": "7b8a1c...",
+        "parent_signature": null,
+        "timestamp": 1787928000,
+        "signature": "3f9c4a..."
+      },
+      "location": {
+        "geohash": "69y7pg3",
+        "coordinates": { "lat": -34.6037, "lon": -58.3816 }
+      },
+      "content": {
+        "text": "Meeting at the obelisk next Sunday at 18:00!"
+      }
+    }
+  ]
+}
+```
+
+#### 3. Ingestion & Cryptographic Verification Pipeline:
+When a peer receives a `sync_response`:
+1. It iterates through each graffiti in `graffitis`.
+2. Reconstructs the canonical JSON payload (excluding `header.signature`).
+3. Verifies the Ed25519 signature against `header.author_pk`.
+4. If valid, persists the graffiti in local DuckDB/IndexedDB and updates the visual viewport.
+
+---
+
+## 6. Swarm Grouping & InfoHash
+
+Graffitis are grouped into **spatial and temporal directories**:
+
+1. **Spatial Resolution:** Territory is partitioned into spatial cells using **Geohash precision 6 or 7** (approx. ~1.2 km to ~150 meters).
+2. **Temporal Resolution:** Time is partitioned into **monthly epochs** in `YYYY-MM` format.
+3. **InfoHash Generation:** A deterministic SHA-1 identifier is computed for the swarm:
+   $$\text{InfoHash} = \text{SHA1}(\text{geohash} + ":" + \text{epoch})$$
+4. **Collective Seeding:** Peer connections exchange messages belonging to the given `InfoHash`. Each file is saved locally as:
+   `{timestamp}_{author_pk_prefix}.msg`
+5. **Historical Custody:** Nodes can seed both current, past, and future epochs stored locally, acting as custodians of spatial-temporal memory.
+
+---
+
+## 7. Sovereign Storage, Metabolism, and Embedded DuckDB
+
+The protocol adopts **DuckDB** as the embedded database engine for Web clients (`@duckdb/duckdb-wasm` in IndexedDB) and desktop/server clients (`duckdb` in Python).
+
+### Database Schemas
+
+#### 1. Graffitis Table (`graffitis`)
 ```sql
 CREATE TABLE IF NOT EXISTS graffitis (
     signature VARCHAR PRIMARY KEY,         -- Unique Ed25519 message signature
@@ -138,6 +284,16 @@ CREATE TABLE IF NOT EXISTS graffitis (
 CREATE INDEX IF NOT EXISTS idx_spatial ON graffitis(geohash);
 CREATE INDEX IF NOT EXISTS idx_time ON graffitis(timestamp);
 CREATE INDEX IF NOT EXISTS idx_parent ON graffitis(parent_signature);
+```
+
+#### 2. Trusted Handshakes Table (`trusted_handshakes`)
+```sql
+CREATE TABLE IF NOT EXISTS trusted_handshakes (
+    public_key VARCHAR PRIMARY KEY,      -- Ed25519 public key of contact
+    alias VARCHAR,                      -- Locally assigned alias/name
+    added_at BIGINT NOT NULL,           -- UNIX timestamp when handshake was established
+    qr_verified BOOLEAN DEFAULT TRUE    -- Verified via physical in-person QR exchange
+);
 ```
 
 ### Core DuckDB Queries:
@@ -176,32 +332,14 @@ CREATE INDEX IF NOT EXISTS idx_parent ON graffitis(parent_signature);
      );
    ```
 
-### Handshake Role (In-Person Validation) & Protection:
-*   **In-Person Handshake:** Direct exchange of public keys (e.g. face-to-face QR code scanning) stored locally in `trusted_handshakes(public_key, name, added_at)`.
-*   **Prominence & Immunity:** Messages authored by public keys in `trusted_handshakes` or flagged as `is_pinned = TRUE` are immune to automatic storage quota purges.
-
----
-
-## 5. Social Swarm Discovery (Social Relays)
-*   **Relay Announcements:** Upon connecting with peers, clients can announce the list of spatial cells (`InfoHashes`) they actively seed.
-*   **Solidarity Seeding:** If a node detects that a contact from its Handshake trust network seeds distant swarms, it can elect to act as a backup seeder to support historic preservation.
-
----
-
-## 6. Declarative Space-Time Nature
-*   **Declarative Coordinates:** Location (`geohash` and coordinates) and time (`timestamp`) of a graffiti are declarative and intentional: the author chooses to place a trace at those coordinates, akin to painting a physical wall.
-*   **Optional Co-Presence Proof:** A graffiti can optionally include witness peer signatures (`location.proof`) to verify simultaneous physical co-presence.
-
----
-
-## 7. Tracker and Spatial Privacy (Signaling)
-The tracker acts exclusively as a signaling server to connect peers interested in the same space-time coordinates:
-*   **Zone Connections:** Clients send their Geohash (full or truncated for privacy) to receive active peers in the area and establish direct WebRTC connections.
-*   **No User Tracking:** The tracker does not maintain user accounts or track real-time user movement; the only visible, persistent presence in the world is the graffitis themselves.
+### Handshake Role & Storage Immunity:
+*   **In-Person Handshake:** Direct exchange of public keys (e.g. face-to-face QR code scanning) stored locally in `trusted_handshakes`.
+*   **Prominence & Immunity:** Messages authored by public keys in `trusted_handshakes` or flagged as `is_pinned = TRUE` are granted immunity against automatic storage metabolism purges.
 
 ---
 
 ## 8. Spatial Conversation Threads
+
 *   **Parent Linking (`parent_signature`):** Replying to a graffiti includes the parent message's Ed25519 signature in the header.
 *   **Itinerant Conversations:** Each reply is anchored at the exact coordinates where the author is located when replying, tracing a physical and temporal trail across the map.
 *   **Decentralized Tree Reconstruction:** The client connects messages and reconstructs the thread tree locally using cryptographic signatures. If a node lacks a parent message, it can request it with priority from swarm peers.
