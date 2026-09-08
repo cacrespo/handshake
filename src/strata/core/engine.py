@@ -1,15 +1,15 @@
-import time
 import logging
 import threading
-from typing import List
+import time
+
+from strata.core.geo import generate_info_hash, get_epoch_string, get_geohash
+from strata.core.identity import ContactBook, IdentityManager
+from strata.core.models import Message
+from strata.core.presence import PresenceManager
+from strata.core.relay import RelayManager
 from strata.core.storage import StorageManager
 from strata.core.swarm import SwarmManager
 from strata.core.sync import SyncEngine
-from strata.core.models import Message
-from strata.core.geo import get_geohash, get_epoch_string, generate_info_hash
-from strata.core.identity import IdentityManager, ContactBook
-from strata.core.relay import RelayManager
-from strata.core.presence import PresenceManager
 
 logger = logging.getLogger("strata.engine")
 
@@ -86,7 +86,7 @@ class StrataEngine:
             self.swarm.start_swarm(info_hash)
             self.active_info_hashes.add(info_hash)
 
-    def _on_peer_discovered(self, public_key: str, relays: List[str]):
+    def _on_peer_discovered(self, public_key: str, relays: list[str]):
         """Callback for peer discovery events."""
         logger.info(f"Peer discovered: {public_key[:8]} relaying {len(relays)} boards.")
 
@@ -124,7 +124,7 @@ class StrataEngine:
         self.storage.save_message(info_hash, message)
         logger.info(f"Message posted to {message.geohash}")
 
-    def get_messages(self, lat: float, lon: float, precision: int = 7) -> List[Message]:
+    def get_messages(self, lat: float, lon: float, precision: int = 7) -> list[Message]:
         """Reads messages for a location (from local cache)."""
         geohash = get_geohash(lat, lon, precision)
         info_hash = generate_info_hash(geohash, get_epoch_string())

@@ -1,10 +1,12 @@
-import pytest
-import time
+import logging
 import os
 import shutil
-import logging
+import time
+
+import pytest
+
 from strata.core.engine import StrataEngine
-from strata.core.geo import get_geohash, get_epoch_string, generate_info_hash
+from strata.core.geo import generate_info_hash, get_epoch_string, get_geohash
 
 
 @pytest.fixture

@@ -1,12 +1,13 @@
-import socket
 import json
+import logging
+import os
+import socket
 import threading
 import time
-import os
-import logging
-from typing import Set, Dict, Any, Optional, List
-from strata.core.storage import StorageManager
+from typing import Any
+
 from strata.core.models import Message
+from strata.core.storage import StorageManager
 
 logger = logging.getLogger("strata.sync")
 
@@ -17,8 +18,8 @@ class SyncEngine:
         storage: StorageManager,
         port: int = 6882,
         public_key_hex: str = "",
-        contact_book: Optional[Any] = None,
-        on_discovery: Optional[Any] = None,
+        contact_book: Any | None = None,
+        on_discovery: Any | None = None,
     ):
         self.storage = storage
         self.port = port
@@ -144,7 +145,7 @@ class SyncEngine:
                     )
                 elif msg_type == "DATA":
                     self._handle_data(payload["info_hash"], payload["message"])
-            except (socket.timeout, json.JSONDecodeError):
+            except (TimeoutError, json.JSONDecodeError):
                 continue
             except Exception as e:
                 if self.running:
@@ -156,7 +157,7 @@ class SyncEngine:
         # For a real alias, we'd use something from config, but for now we pass it
         # Actually, let's just sign the PK + a timestamp to prevent replay
         timestamp = int(time.time())
-        data_to_sign = f"HANDSHAKE:{pk_hex}:{timestamp}".encode("utf-8")
+        data_to_sign = f"HANDSHAKE:{pk_hex}:{timestamp}".encode()
         signature = identity_manager.private_key.sign(data_to_sign).hex()
 
         packet = {
@@ -189,7 +190,7 @@ class SyncEngine:
             public_key = ed25519.Ed25519PublicKey.from_public_bytes(
                 bytes.fromhex(public_key_hex)
             )
-            data_to_verify = f"HANDSHAKE:{public_key_hex}:{timestamp}".encode("utf-8")
+            data_to_verify = f"HANDSHAKE:{public_key_hex}:{timestamp}".encode()
             public_key.verify(bytes.fromhex(signature), data_to_verify)
         except Exception as e:
             logger.error(
@@ -206,7 +207,7 @@ class SyncEngine:
 
         logger.info(f"Validated Handshake received from {public_key_hex[:8]}!")
 
-    def _handle_discover(self, addr, public_key: str = "", relays: List[str] = None):
+    def _handle_discover(self, addr, public_key: str = "", relays: list[str] = None):
         logger.info(f"Received discovery from {addr}. PK: {public_key}")
 
         # Social Discovery Logic
@@ -297,10 +298,10 @@ class SyncEngine:
         self,
         geohash: str,
         info_hash: str,
-        remote_hashes: Set[str],
+        remote_hashes: set[str],
         addr,
         public_key: str = "",
-        relays: List[str] = None,
+        relays: list[str] = None,
     ):
         logger.info(
             f"Received inventory for {info_hash} from {addr} ({len(remote_hashes)} hashes). PK: {public_key}"
@@ -337,7 +338,7 @@ class SyncEngine:
             logger.info(f"Sending back inventory for {info_hash} to {addr}")
             self._send_inventory(geohash, info_hash, list(local_hashes), addr)
 
-    def _send_inventory(self, geohash: str, info_hash: str, hashes: List[str], addr):
+    def _send_inventory(self, geohash: str, info_hash: str, hashes: list[str], addr):
         packet = {
             "type": "INVENTORY",
             "public_key": self.public_key_hex,
@@ -383,7 +384,7 @@ class SyncEngine:
         logger.info(f"Sending DATA packet for {message.content[:20]} to {addr}")
         self.sock.sendto(json.dumps(packet).encode("utf-8"), addr)
 
-    def _handle_data(self, info_hash: str, msg_data: Dict[str, Any]):
+    def _handle_data(self, info_hash: str, msg_data: dict[str, Any]):
         logger.info(f"Received DATA for {info_hash}")
         try:
             msg = Message(

@@ -1,7 +1,9 @@
-import pytest
 import os
-from strata.core.identity import IdentityManager, ContactBook
+
+import pytest
 from cryptography.hazmat.primitives.asymmetric import ed25519
+
+from strata.core.identity import ContactBook, IdentityManager
 
 
 @pytest.fixture

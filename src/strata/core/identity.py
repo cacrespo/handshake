@@ -1,9 +1,9 @@
-import os
 import json
 import logging
-from typing import Optional, Dict
-from cryptography.hazmat.primitives.asymmetric import ed25519
+import os
+
 from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519
 
 logger = logging.getLogger("strata.identity")
 
@@ -82,7 +82,7 @@ class ContactBook:
         self.contacts_file = os.path.join(self.config_path, "contacts.json")
         self.owner_label = owner_label
         os.makedirs(self.config_path, exist_ok=True)
-        self.contacts: Dict[str, str] = {}  # pk_hex -> alias
+        self.contacts: dict[str, str] = {}  # pk_hex -> alias
         self._load()
 
     def _load(self):
@@ -98,7 +98,7 @@ class ContactBook:
         self.contacts[public_key_hex] = alias
         self._save()
 
-    def get_alias(self, public_key_hex: str) -> Optional[str]:
+    def get_alias(self, public_key_hex: str) -> str | None:
         alias = self.contacts.get(public_key_hex)
         logger.debug(
             f"[{self.owner_label}] Contact lookup: {public_key_hex[:8]} -> {alias}"

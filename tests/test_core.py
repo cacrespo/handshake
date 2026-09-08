@@ -1,6 +1,7 @@
 from cryptography.hazmat.primitives.asymmetric import ed25519
+
+from strata.core.geo import generate_info_hash, get_geohash
 from strata.core.models import Message
-from strata.core.geo import get_geohash, generate_info_hash
 
 
 def test_message_signing_and_verification():
@@ -40,8 +41,9 @@ def test_geo_logic():
 
 
 def test_storage_manager(tmp_path):
-    from strata.core.storage import StorageManager
     import os
+
+    from strata.core.storage import StorageManager
 
     # 1. Setup
     storage = StorageManager(base_path=str(tmp_path))
@@ -65,8 +67,9 @@ def test_storage_manager(tmp_path):
 
 
 def test_storage_metabolism_and_keep(tmp_path):
-    from strata.core.storage import StorageManager
     import time
+
+    from strata.core.storage import StorageManager
 
     # Setup with a very small limit: 2 messages
     storage = StorageManager(base_path=str(tmp_path), max_messages_per_swarm=2)

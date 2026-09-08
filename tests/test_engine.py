@@ -1,11 +1,13 @@
-import pytest
-import time
 import os
 import shutil
+import time
+
+import pytest
 from cryptography.hazmat.primitives.asymmetric import ed25519
+
 from strata.core.engine import StrataEngine
-from strata.core.models import Message
 from strata.core.geo import get_geohash
+from strata.core.models import Message
 
 
 @pytest.fixture
@@ -44,7 +46,7 @@ def test_engine_integration_sync(clean_storage):
     msg_a.sign(priv_a)
     engine_alice.post_message(msg_a)
 
-    from strata.core.geo import get_epoch_string, generate_info_hash
+    from strata.core.geo import generate_info_hash, get_epoch_string
 
     epoch = get_epoch_string()
     info_hash = generate_info_hash(geohash, epoch)
