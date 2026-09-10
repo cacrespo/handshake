@@ -1,9 +1,11 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 from cryptography.hazmat.primitives.asymmetric import ed25519
-from strata.core.sync import SyncEngine
-from strata.core.storage import StorageManager
+
 from strata.core.models import Message
+from strata.core.storage import StorageManager
+from strata.core.sync import SyncEngine
 
 
 @pytest.fixture

@@ -1,7 +1,6 @@
-import os
 import json
 import logging
-from typing import Set
+import os
 
 logger = logging.getLogger("strata.relay")
 
@@ -17,7 +16,7 @@ class RelayManager:
         self.relay_file = os.path.join(self.config_path, "relays.json")
         os.makedirs(self.config_path, exist_ok=True)
 
-        self.relays: Set[str] = set()
+        self.relays: set[str] = set()
         self._load()
 
     def _load(self):
