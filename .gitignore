@@ -212,3 +212,4 @@ openspec/
 
 # Gemini (Private)
 .gemini/
+node_modules/
