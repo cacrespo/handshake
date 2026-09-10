@@ -18,6 +18,7 @@ Human validation does not occur through digital verification algorithms, but thr
 
 ### 2. Protocol Goals and Philosophy
 *   **The Message as a Sovereign Unit:** There are no personal walls, inflated account follower counts, or algorithmic feeds. There are space-time graffitis. A message exists and retains value based on its location, content, and the collective interest in preserving it.
+*   **Location as an Expressive and Mandatory Anchor (Not Surveillance):** Location is never passive tracking or surveillance imposed on the user; it is an intentional, expressive, voluntary, and strictly necessary act. In Handshake, a message cannot exist without its space-time anchor.
 *   **Geography and Time as the Algorithm:** Visibility and discovery depend on geography and temporal moments. No attention optimization algorithms exist: to discover a digital trace, you must explore those coordinates.
 *   **Sovereign Space-Time Placement (Past, Present & Future):** Both location and timestamp are declarative, expressive choices of the author. An author can leave a message anchored right now, in the past (historical documentation), or in the future (future rendezvous, time capsules, announcements).
 *   **Custody and Collective Seeding (Data Sovereignty):** The network does not rely on a centralized proprietary server. Anyone can seed messages, freely deciding which spatial memory parts to preserve, replicate, or purge from local storage as historical custodians.
@@ -109,7 +110,7 @@ To generate or verify the Ed25519 signature:
 
 A cornerstone of the Handshake protocol is that **both space and time are expressive, sovereign choices of the creator**:
 
-1. **Declarative Coordinates:** Leaving a graffiti is intentional, akin to painting a specific physical wall. The author chooses where in the geographical landscape the trace is placed.
+1. **Declarative Coordinates (Roots & Replies):** Leaving a graffiti is intentional, akin to painting a specific physical wall. Location is never passive tracking; it is an expressive, voluntary, and necessary choice. In replies as well as root messages, coordinates are sovereign and declarative: an author may anchor a reply at the exact location of the parent graffiti, at their current physical location, or at any coordinates chosen on the map.
 2. **Declarative Time (Writing to Future & Past):**
    - **Future Graffitis:** An author can anchor a message in a future timestamp (e.g., an invitation to a physical meet-up next Saturday, a time capsule, a prediction, or a scheduled announcement). The message will be discovered by peers exploring that future date on the temporal timeline.
    - **Historical Anchors:** An author can anchor a message in a past timestamp (e.g., chronicling a historical event that occurred at that location).
@@ -341,5 +342,5 @@ CREATE TABLE IF NOT EXISTS trusted_handshakes (
 ## 8. Spatial Conversation Threads
 
 *   **Parent Linking (`parent_signature`):** Replying to a graffiti includes the parent message's Ed25519 signature in the header.
-*   **Itinerant Conversations:** Each reply is anchored at the exact coordinates where the author is located when replying, tracing a physical and temporal trail across the map.
+*   **Sovereign & Itinerant Replies:** Every reply is a sovereign space-time trace carrying its own declarative coordinates. An author may anchor a reply at the exact same location as the parent message, at their own physical location (tracing an itinerant physical path across the map), or at any arbitrary coordinates chosen across space.
 *   **Decentralized Tree Reconstruction:** The client connects messages and reconstructs the thread tree locally using cryptographic signatures. If a node lacks a parent message, it can request it with priority from swarm peers.

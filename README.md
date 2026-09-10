@@ -3,7 +3,7 @@
 ## The Vision
 **Handshake** is a decentralized, space-time anchored communication network where the central focus is **the message, not user profiles or accounts**. 
 
-Rather than managing abstract digital identities or infinite algorithm-driven feeds, Handshake proposes a landscape of **digital graffitis anchored in exact coordinates and time**. Physical encounter validates human relationships, but the virtual network's core unit of value and memory is the space-time trace itself—seeded, preserved, and explored collectively through peer-to-peer swarms.
+Rather than managing abstract digital identities or infinite algorithm-driven feeds, Handshake proposes a landscape of **digital graffitis anchored in exact coordinates and time**. Location is never passive surveillance or tracking imposed on the user; it is an **expressive, voluntary, and strictly necessary act**—in Handshake, no message can exist without its space-time anchor. Physical encounter validates human relationships, but the virtual network's core unit of value and memory is the space-time trace itself—seeded, preserved, and explored collectively through peer-to-peer swarms.
 
 ## The "Handshake" Mechanic
 The core organizing principle of trust and custody is the **Handshake**—a cryptographic validation of trust and presence.
