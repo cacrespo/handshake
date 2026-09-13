@@ -1,12 +1,15 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Circle } from "react-leaflet";
 import L from "leaflet";
 import nacl from "tweetnacl";
 import {
   Folder, RefreshCw, Upload, Download, MapPin,
   Clock, Send, Layers, Moon, Sun, Globe, Satellite,
-  Settings, Plus, X, Copy, Check, Shield, HardDrive, Terminal, MessageSquarePlus
+  Settings, Plus, X, Copy, Check, Shield, HardDrive, Terminal, MessageSquarePlus,
+  Radio, Activity, Navigation
 } from "lucide-react";
+import "./App.css";
+import GlobeView, { type GlobeMarker } from "./GlobeView";
 
 // Fix Leaflet marker icons in Vite/React
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -57,6 +60,19 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return R * c; // in metres
 }
 
+function getAuthorAvatar(pubkey: string) {
+  if (!pubkey) return { bg: "#3b82f6", initials: "??", snippet: "anon" };
+  let hash = 0;
+  for (let i = 0; i < pubkey.length; i++) {
+    hash = pubkey.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue1 = Math.abs(hash % 360);
+  const hue2 = (hue1 + 50) % 360;
+  const initials = pubkey.substring(0, 2).toUpperCase();
+  const bg = `linear-gradient(135deg, hsl(${hue1}, 75%, 48%), hsl(${hue2}, 85%, 38%))`;
+  return { bg, initials, snippet: pubkey.substring(0, 8) };
+}
+
 // Map updater component to sync viewport with smooth flyTo
 function MapController({ center, target }: { center: [number, number]; target: [number, number] | null }) {
   const map = useMap();
@@ -71,13 +87,26 @@ function MapController({ center, target }: { center: [number, number]; target: [
 }
 
 // Map events handler to sync coords state on click
-function MapEventsTracker({ onClick, onClearTarget }: { onClick: (lat: number, lon: number) => void; onClearTarget: () => void }) {
+function MapEventsTracker({
+  onClick,
+  onClearTarget,
+  onZoomOutToGlobe
+}: {
+  onClick: (lat: number, lon: number) => void;
+  onClearTarget: () => void;
+  onZoomOutToGlobe?: () => void;
+}) {
   useMapEvents({
     click: (e) => {
       onClick(e.latlng.lat, e.latlng.lng);
     },
     movestart: () => {
       onClearTarget();
+    },
+    zoomend: (e) => {
+      if (onZoomOutToGlobe && e.target.getZoom() <= 3) {
+        onZoomOutToGlobe();
+      }
     }
   });
   return null;
@@ -144,6 +173,9 @@ const MAP_STYLES: Record<MapStyle, MapStyleConfig> = {
 
 export default function App() {
   const [coords, setCoords] = useState<[number, number]>([-34.6037, -58.3816]);
+  const [gpsCoords, setGpsCoords] = useState<[number, number] | null>(null);
+  const [viewMode, setViewMode] = useState<"globe" | "map">("globe");
+  const [composerLocationMode, setComposerLocationMode] = useState<"parent" | "gps" | "picked">("picked");
   const [geohash, setGeohash] = useState<string>("");
   const [publicKey, setPublicKey] = useState<string>("");
   const [secretKey, setSecretKey] = useState<string>("");
@@ -204,6 +236,24 @@ export default function App() {
   };
   const [newGraffitiContent, setNewGraffitiContent] = useState("");
   const [replyingTo, setReplyingTo] = useState<any | null>(null);
+  const getComposerActiveCoords = (): [number, number] => {
+    if (composerLocationMode === "parent" && replyingTo) {
+      try {
+        const decoded = decodeGeohash(replyingTo.location.geohash);
+        return [decoded.lat, decoded.lon];
+      } catch (e) {
+        return coords;
+      }
+    }
+    if (composerLocationMode === "gps" && gpsCoords) {
+      return gpsCoords;
+    }
+    return coords;
+  };
+
+  const activeComposerCoords = getComposerActiveCoords();
+  const activeComposerGeohash = encodeGeohash(activeComposerCoords[0], activeComposerCoords[1]);
+
   const [trustedAuthors, setTrustedAuthors] = useState<string[]>([]);
   const [mapTarget, setMapTarget] = useState<[number, number] | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -264,6 +314,7 @@ export default function App() {
           const lat = position.coords.latitude;
           const lon = position.coords.longitude;
           setCoords([lat, lon]);
+          setGpsCoords([lat, lon]);
           const gh = encodeGeohash(lat, lon);
           setGeohash(gh);
           addLog(`GPS coordinates resolved: ${lat.toFixed(5)}, ${lon.toFixed(5)} (Geohash: ${gh})`, "info");
@@ -665,10 +716,10 @@ export default function App() {
         timestamp: targetTimestamp
       },
       location: {
-        geohash: geohash,
+        geohash: activeComposerGeohash,
         proof: {
           type: "GPS",
-          data: `${coords[0].toFixed(6)},${coords[1].toFixed(6)}`
+          data: `${activeComposerCoords[0].toFixed(6)},${activeComposerCoords[1].toFixed(6)}`
         }
       },
       content: {
@@ -691,6 +742,8 @@ export default function App() {
     };
 
     await saveAndSeedMessage(fullySignedMessage);
+    setCoords(activeComposerCoords);
+    setGeohash(activeComposerGeohash);
     setNewGraffitiContent("");
     setReplyingTo(null);
     const dateFormatted = new Date(targetTimestamp * 1000).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
@@ -770,7 +823,34 @@ export default function App() {
   };
 
   // Combine lists of graffitis to show on map
-  const allGraffitis = [...localGraffitis, ...remoteGraffitis];
+  const allGraffitis = useMemo(() => [...localGraffitis, ...remoteGraffitis], [localGraffitis, remoteGraffitis]);
+
+  // Map markers for the 3D Globe visualization (Radio Garden / Radio Atlas)
+  const globeMarkers: GlobeMarker[] = useMemo(() => {
+    const list: GlobeMarker[] = [];
+    allGraffitis.forEach((g, idx) => {
+      try {
+        const gCoords = decodeGeohash(g.location.geohash);
+        const isLocal = localGraffitis.some(lg => lg.header.signature === g.header.signature);
+        const isTrusted = trustedAuthors.includes(g.header.author_pk);
+        list.push({
+          id: g.header.signature || `g-${idx}`,
+          lat: gCoords.lat,
+          lon: gCoords.lon,
+          geohash: g.location.geohash,
+          text: g.content?.text || "",
+          author: g.header.author_pk || "Unknown",
+          timestamp: g.header.timestamp || 0,
+          isLocal,
+          isTrusted,
+          raw: g
+        });
+      } catch (e) {
+        // Ignore invalid geohash
+      }
+    });
+    return list;
+  }, [allGraffitis, localGraffitis, trustedAuthors]);
   
   // Filter by time AND spatial-temporal visibility mechanics (Handshake multiplier)
   const filteredGraffitis = allGraffitis.filter(g => {
@@ -833,11 +913,12 @@ export default function App() {
     const isTrusted = trustedAuthors.includes(node.header.author_pk);
     const gCoords = decodeGeohash(node.location.geohash);
     const dist = getDistance(coords[0], coords[1], gCoords.lat, gCoords.lon);
+    const avatar = getAuthorAvatar(node.header.author_pk);
 
     return (
       <div style={{ 
         marginLeft: depth > 0 ? "16px" : "0", 
-        borderLeft: depth > 0 ? "2px solid rgba(168, 85, 247, 0.3)" : "none", 
+        borderLeft: depth > 0 ? "2px solid rgba(0, 243, 255, 0.25)" : "none", 
         paddingLeft: depth > 0 ? "12px" : "0",
         marginTop: "8px"
       }}>
@@ -846,29 +927,47 @@ export default function App() {
           onClick={() => handleCardClick([gCoords.lat, gCoords.lon])}
           style={{ marginBottom: "4px" }}
         >
-          <div className="card-header">
-            <span className="card-author">
-              {node.header.author_pk.substring(0, 8)}...
-            </span>
-            <span className="card-time">
-              {new Date(node.header.timestamp * 1000).toLocaleTimeString([], {hour: "2-digit", minute:"2-digit"})}
-            </span>
+          <div className="card-header-top">
+            <div className="card-author-identity">
+              <div className="avatar-identicon" style={{ background: avatar.bg }}>
+                {avatar.initials}
+              </div>
+              <div className="avatar-hash-chip">
+                <span className="card-author-hash">#{avatar.snippet}</span>
+                <span className={`badge ${isTrusted ? "badge-success" : isLocal ? "badge-info" : "badge-warning"}`} style={{ fontSize: "9px", padding: "1px 5px" }}>
+                  {isTrusted ? "★ Confiable" : isLocal ? "● Local" : "⚡ P2P"}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <span className={`card-distance-chip ${isTrusted ? "trusted" : isLocal ? "local" : "remote"}`}>
+                <MapPin size={11} />
+                {dist < 1000 ? `${dist.toFixed(0)}m` : `${(dist / 1000).toFixed(1)}km`}
+              </span>
+              <span className="card-time" style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                {new Date(node.header.timestamp * 1000).toLocaleTimeString([], {hour: "2-digit", minute:"2-digit"})}
+              </span>
+            </div>
           </div>
-          <div className="card-content">
+
+          <div className="card-content" style={{ fontSize: "13px", lineHeight: "1.45", color: "var(--text-primary)" }}>
             "{node.content.text}"
           </div>
-          <div className="card-footer">
-            <span className="card-geohash">
-              Geohash: <code>{node.location.geohash.substring(0, 7)}</code>
+
+          <div className="card-footer" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px" }}>
+            <span className="card-geohash" style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+              Geohash: <code style={{ color: "var(--neon-cyan)" }}>{node.location.geohash.substring(0, 7)}</code>
             </span>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               {node.header.author_pk !== publicKey && (
                 <button
                   className="btn btn-secondary"
-                  style={{ padding: "2px 6px", fontSize: "10px", height: "20px", display: "inline-flex", alignItems: "center", gap: "2px" }}
+                  style={{ padding: "2px 8px", fontSize: "10px", height: "22px", display: "inline-flex", alignItems: "center", gap: "3px" }}
                   onClick={(e) => {
                     e.stopPropagation();
                     setReplyingTo(node);
+                    setComposerLocationMode("parent");
                     setIsComposerOpen(true);
                   }}
                 >
@@ -878,7 +977,7 @@ export default function App() {
               {!isLocal && (
                 <button
                   className="btn btn-primary"
-                  style={{ padding: "2px 6px", fontSize: "10px", height: "20px", display: "inline-flex" }}
+                  style={{ padding: "2px 8px", fontSize: "10px", height: "22px", display: "inline-flex" }}
                   onClick={(e) => {
                     e.stopPropagation();
                     saveAndSeedMessage(node);
@@ -887,10 +986,6 @@ export default function App() {
                   📥 Seedear
                 </button>
               )}
-              <span className={`card-distance ${isTrusted ? "trusted" : isLocal ? "local" : "remote"}`}>
-                <MapPin size={12} style={{ verticalAlign: "middle", marginRight: "2px" }} />
-                {dist.toFixed(0)}m
-              </span>
             </div>
           </div>
         </div>
@@ -905,8 +1000,51 @@ export default function App() {
     <div id="root">
       <header className="app-header">
         <div className="logo-container">
-          <div className="logo-text">Handshake</div>
-          <div className="subtitle">Space-Time Conexions</div>
+          <div className="logo-badge">
+            <Radio size={18} style={{ color: "var(--neon-cyan)" }} />
+          </div>
+          <div>
+            <div className="logo-text">Handshake</div>
+            <div className="subtitle">Space-Time Conexions</div>
+          </div>
+        </div>
+
+        {/* Center P2P Live HUD */}
+        <div className="header-p2p-hud">
+          <div className={`hud-pill ${connectedPeers.length > 0 ? "active" : ""}`} title="Nodos P2P WebRTC conectados">
+            <div className={`p2p-pulse-dot ${connectedPeers.length > 0 ? "emerald" : "amber"}`} />
+            <span>Peers: <code>{connectedPeers.length}</code></span>
+          </div>
+
+          <div className="hud-pill" title="Geohash espacial activo">
+            <Navigation size={12} style={{ color: "var(--neon-cyan)" }} />
+            <span>Celda: <code>{geohash.substring(0, 7)}</code></span>
+          </div>
+
+          <div className="hud-pill" title="Estado de sincronización Strata-Sync">
+            <Activity size={12} style={{ color: wsStatus === "connected" ? "var(--neon-emerald)" : "var(--neon-amber)" }} />
+            <span>Strata-Sync: <code style={{ color: wsStatus === "connected" ? "var(--neon-emerald)" : "var(--neon-amber)" }}>{wsStatus === "connected" ? "Live" : "Standby"}</code></span>
+          </div>
+
+          {/* View Mode Switcher */}
+          <div className="view-mode-toggle">
+            <button
+              className={`view-mode-btn ${viewMode === "globe" ? "active" : ""}`}
+              onClick={() => setViewMode("globe")}
+              title="Vista Global 3D (Radio Garden / Radio Atlas)"
+            >
+              <Globe size={13} />
+              <span>Globo 3D</span>
+            </button>
+            <button
+              className={`view-mode-btn ${viewMode === "map" ? "active" : ""}`}
+              onClick={() => setViewMode("map")}
+              title="Vista de Mapa 2D Local"
+            >
+              <Layers size={13} />
+              <span>Mapa 2D</span>
+            </button>
+          </div>
         </div>
 
         <div className="header-status">
@@ -914,6 +1052,7 @@ export default function App() {
             className="btn btn-primary btn-header-write"
             onClick={() => {
               setReplyingTo(null);
+              setComposerLocationMode("picked");
               setIsComposerOpen(true);
             }}
             title="Escribir graffiti en las coordenadas seleccionadas"
@@ -986,9 +1125,51 @@ export default function App() {
           </div>
         </div>
 
-        {/* Column 2: Interactive Map (Expansive Full Canvas) */}
-        <div className="map-container">
-          {/* Floating Map Style Selector */}
+        {/* Column 2: Interactive Map & 3D Globe Viewport */}
+        <div className="map-container" style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}>
+          {viewMode === "globe" ? (
+            <GlobeView
+              markers={globeMarkers}
+              userCoords={coords}
+              activeCoords={coords}
+              onSelectLocation={(lat, lon) => {
+                setCoords([lat, lon]);
+                setMapTarget([lat, lon]);
+                setViewMode("map");
+              }}
+              onSwitchTo2D={() => {
+                setMapTarget(coords);
+                setViewMode("map");
+              }}
+            />
+          ) : (
+            <>
+              <button
+                className="btn btn-secondary"
+                style={{
+                  position: "absolute",
+                  top: "20px",
+                  left: "20px",
+                  zIndex: 999,
+                  background: "rgba(13, 17, 27, 0.88)",
+                  backdropFilter: "blur(16px)",
+                  border: "1px solid var(--border-glow)",
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.5), 0 0 15px var(--neon-cyan-glow)",
+                  color: "#ffffff",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px"
+                }}
+                onClick={() => setViewMode("globe")}
+                title="Volver a la vista 3D del Globo terráqueo"
+              >
+                <Globe size={14} style={{ color: "var(--neon-cyan)" }} />
+                <span>🌐 Vista Globo 3D</span>
+              </button>
+
+              {/* Floating Map Style Selector */}
           <div className="map-style-selector">
             <button 
               className="map-style-btn" 
@@ -1059,6 +1240,7 @@ export default function App() {
                 setCoords([lat, lon]);
               }} 
               onClearTarget={() => setMapTarget(null)}
+              onZoomOutToGlobe={() => setViewMode("globe")}
             />
 
             {/* Visibility Rings */}
@@ -1184,6 +1366,8 @@ export default function App() {
               }
             })}
           </MapContainer>
+            </>
+          )}
 
           {/* Time Slider Overlay */}
           <div className="map-overlay">
@@ -1264,12 +1448,72 @@ export default function App() {
             {/* Space-Time Indicators */}
             <div className="composer-meta-bar">
               <div className="composer-meta-item" title="Coordenadas espaciales donde se colocará el graffiti">
-                <MapPin size={13} style={{ color: "var(--accent)" }} />
-                <span>Geohash: <code>{geohash.substring(0, 7)}</code> ({coords[0].toFixed(4)}, {coords[1].toFixed(4)})</span>
+                <MapPin size={13} style={{ color: "var(--neon-cyan)" }} />
+                <span>Geohash: <code>{activeComposerGeohash.substring(0, 7)}</code> ({activeComposerCoords[0].toFixed(4)}, {activeComposerCoords[1].toFixed(4)})</span>
               </div>
               <div className="composer-meta-item" title="Momento temporal de anclaje">
-                <Clock size={13} style={{ color: "#f1c40f" }} />
+                <Clock size={13} style={{ color: "var(--neon-amber)" }} />
                 <span className="composer-time-tag">{getTargetTimeLabel()}</span>
+              </div>
+            </div>
+
+            {/* Sovereign Location Selector (Declarative Location Principle) */}
+            <div className="composer-location-section">
+              <div className="composer-location-title">
+                <MapPin size={13} style={{ color: "var(--neon-cyan)" }} />
+                <span>Ubicación Soberana de Publicación</span>
+              </div>
+              
+              <div className="composer-location-options">
+                {replyingTo && (
+                  <button
+                    type="button"
+                    className={`loc-option-btn ${composerLocationMode === "parent" ? "active" : ""}`}
+                    onClick={() => setComposerLocationMode("parent")}
+                    title="Responder anclado en la misma ubicación del mensaje original"
+                  >
+                    <MapPin size={13} />
+                    <span>Misma ubicación que mensaje original</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className={`loc-option-btn ${composerLocationMode === "picked" ? "active" : ""}`}
+                  onClick={() => setComposerLocationMode("picked")}
+                  title="Anclar en las coordenadas seleccionadas en el mapa o globo"
+                >
+                  <Globe size={13} />
+                  <span>Punto seleccionado en Mapa/Globo</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`loc-option-btn ${composerLocationMode === "gps" ? "active" : ""}`}
+                  onClick={() => {
+                    setComposerLocationMode("gps");
+                    if (!gpsCoords && navigator.geolocation) {
+                      navigator.geolocation.getCurrentPosition(
+                        pos => {
+                          const newGps: [number, number] = [pos.coords.latitude, pos.coords.longitude];
+                          setGpsCoords(newGps);
+                        },
+                        () => {
+                          addLog("No se pudo obtener coordenadas GPS.", "warning");
+                        }
+                      );
+                    }
+                  }}
+                  title="Anclar en la posición GPS de tu dispositivo"
+                >
+                  <Navigation size={13} />
+                  <span>GPS actual ({gpsCoords ? `${gpsCoords[0].toFixed(2)}, ${gpsCoords[1].toFixed(2)}` : "Detectar"})</span>
+                </button>
+              </div>
+
+              <div className="composer-resolved-coords">
+                <span>Geohash anclaje: <code>{activeComposerGeohash.substring(0, 7)}</code></span>
+                <span>Lat/Lon: <code>{activeComposerCoords[0].toFixed(5)}, {activeComposerCoords[1].toFixed(5)}</code></span>
               </div>
             </div>
 
