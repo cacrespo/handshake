@@ -237,10 +237,15 @@ export default function GlobeView({
     let velY = 0;
     let autoRotate = true;
 
+    let mouseDownPos = { x: 0, y: 0 };
+    let dragDistance = 0;
+
     const onMouseDown = (e: MouseEvent) => {
       isDragging = true;
       autoRotate = false;
+      dragDistance = 0;
       previousMousePosition = { x: e.clientX, y: e.clientY };
+      mouseDownPos = { x: e.clientX, y: e.clientY };
     };
 
     const onMouseMove = (e: MouseEvent) => {
@@ -288,6 +293,7 @@ export default function GlobeView({
 
       const deltaX = e.clientX - previousMousePosition.x;
       const deltaY = e.clientY - previousMousePosition.y;
+      dragDistance += Math.hypot(deltaX, deltaY);
 
       velX = deltaX * 0.005;
       velY = deltaY * 0.005;
@@ -317,7 +323,8 @@ export default function GlobeView({
       }
     };
 
-    const onClick = (e: MouseEvent) => {
+    // Double-click lands on 2D map and fixes coordinates
+    const onDblClick = (e: MouseEvent) => {
       const rect = container.getBoundingClientRect();
       const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       const mouseY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
@@ -343,12 +350,37 @@ export default function GlobeView({
       }
     };
 
+    // Single click on a marker without drag opens/pins tooltip, doesn't switch to 2D
+    const onClick = (e: MouseEvent) => {
+      if (dragDistance > 5) return; // Ignore drag gestures
+
+      const rect = container.getBoundingClientRect();
+      const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      const mouseY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), camera);
+
+      const markerHits = raycaster.intersectObjects(interactiveObjectsRef.current, true);
+      if (markerHits.length > 0) {
+        const hit = markerHits[0].object.userData;
+        if (hit.markerData) {
+          setHoveredMarker({
+            marker: hit.markerData,
+            screenX: e.clientX,
+            screenY: e.clientY
+          });
+        }
+      }
+    };
+
     const domElement = renderer.domElement;
     domElement.addEventListener("mousedown", onMouseDown);
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
     domElement.addEventListener("wheel", onWheel, { passive: false });
     domElement.addEventListener("click", onClick);
+    domElement.addEventListener("dblclick", onDblClick);
 
     // --- Animation Loop ---
     let reqId: number;
@@ -406,6 +438,7 @@ export default function GlobeView({
       window.removeEventListener("mouseup", onMouseUp);
       domElement.removeEventListener("wheel", onWheel);
       domElement.removeEventListener("click", onClick);
+      domElement.removeEventListener("dblclick", onDblClick);
 
       if (domElement.parentNode === container) {
         container.removeChild(domElement);
@@ -624,7 +657,11 @@ export default function GlobeView({
             "{hoveredMarker.marker.text.substring(0, 70)}
             {hoveredMarker.marker.text.length > 70 ? "..." : ""}"
           </div>
-          <div className="tooltip-action">
+          <div
+            className="tooltip-action"
+            style={{ cursor: "pointer" }}
+            onClick={() => callbacksRef.current.onSelectLocation(hoveredMarker.marker.lat, hoveredMarker.marker.lon, hoveredMarker.marker)}
+          >
             <Sparkles size={12} className="tooltip-action-icon" />
             <span>Haz clic para aterrizar y leer</span>
           </div>
@@ -633,7 +670,7 @@ export default function GlobeView({
 
       {/* Hint Banner at bottom */}
       <div className="globe-hint-banner">
-        <span>Arrastra para rotar la Tierra • Rueda para zoom • Clic en un nodo o doble clic para aterrizar</span>
+        <span>Arrastra para rotar la Tierra • Rueda para zoom • Doble clic para aterrizar en el mapa 2D</span>
       </div>
     </div>
   );
