@@ -57,6 +57,13 @@ function isWebGLAvailable(): boolean {
   }
 }
 
+interface AnimatedRing {
+  mesh: THREE.Mesh;
+  baseScale: number;
+  phase: number;
+  speed: number;
+}
+
 export default function GlobeView({
   markers,
   userCoords,
@@ -75,6 +82,22 @@ export default function GlobeView({
 
   const webglSupported = useMemo(() => isWebGLAvailable(), []);
 
+  // Refs to persist Three.js objects across marker updates
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const globeGroupRef = useRef<THREE.Group | null>(null);
+  const markersGroupRef = useRef<THREE.Group | null>(null);
+  const animatedRingsRef = useRef<AnimatedRing[]>([]);
+  const interactiveObjectsRef = useRef<THREE.Object3D[]>([]);
+
+  // Keep latest callbacks in ref to prevent re-attaching event listeners
+  const callbacksRef = useRef({ onSelectLocation, onSwitchTo2D });
+  callbacksRef.current = { onSelectLocation, onSwitchTo2D };
+
+  const earthRadius = 80;
+
+  // --- 1. Mount Effect: Initialize Three.js Scene ONCE ---
   useEffect(() => {
     if (!webglSupported) {
       setHasWebGL(false);
@@ -84,34 +107,44 @@ export default function GlobeView({
     const container = containerRef.current;
     if (!container) return;
 
-    // --- Three.js Setup ---
-    const width = container.clientWidth || window.innerWidth;
-    const height = container.clientHeight || window.innerHeight;
+    const width = container.clientWidth || window.innerWidth || 800;
+    const height = container.clientHeight || window.innerHeight || 600;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0a0b10); // Deep space slate
+    sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(45, width / height, 1, 2000);
-    camera.position.set(0, 50, 240);
+    camera.position.set(0, 0, 250);
+    camera.lookAt(0, 0, 0);
+    cameraRef.current = camera;
 
     let renderer: THREE.WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
-      renderer.setSize(width, height);
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: false,
+        powerPreference: "high-performance"
+      });
+      renderer.setSize(width, height, false);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.domElement.style.display = "block";
+      renderer.domElement.style.width = "100%";
+      renderer.domElement.style.height = "100%";
       container.appendChild(renderer.domElement);
+      rendererRef.current = renderer;
     } catch (e) {
-      console.warn("Could not create WebGLRenderer in environment:", e);
+      console.warn("Could not create WebGLRenderer:", e);
       setHasWebGL(false);
       return;
     }
 
     // --- Lighting ---
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.4);
     scene.add(ambientLight);
 
-    const sunLight = new THREE.DirectionalLight(0xa5d8ff, 1.6);
-    sunLight.position.set(200, 150, 150);
+    const sunLight = new THREE.DirectionalLight(0xd4e9ff, 1.8);
+    sunLight.position.set(200, 150, 180);
     scene.add(sunLight);
 
     // --- Starfield Background ---
@@ -132,33 +165,34 @@ export default function GlobeView({
     starsGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
     const starsMat = new THREE.PointsMaterial({
       color: 0x8ec5fc,
-      size: 1.4,
+      size: 1.5,
       transparent: true,
-      opacity: 0.65
+      opacity: 0.7
     });
     const starField = new THREE.Points(starsGeo, starsMat);
     scene.add(starField);
 
     // --- Earth Sphere ---
-    const earthRadius = 80;
+    const globeGroup = new THREE.Group();
+    scene.add(globeGroup);
+    globeGroupRef.current = globeGroup;
+
     const earthCanvas = createEarthCanvas(2048, 1024);
     const earthTexture = new THREE.CanvasTexture(earthCanvas);
     earthTexture.wrapS = THREE.ClampToEdgeWrapping;
     earthTexture.wrapT = THREE.ClampToEdgeWrapping;
-
-    const globeGroup = new THREE.Group();
-    scene.add(globeGroup);
+    earthTexture.needsUpdate = true;
 
     const earthGeo = new THREE.SphereGeometry(earthRadius, 64, 64);
     const earthMat = new THREE.MeshStandardMaterial({
       map: earthTexture,
-      roughness: 0.8,
-      metalness: 0.15
+      roughness: 0.75,
+      metalness: 0.1
     });
     const earthMesh = new THREE.Mesh(earthGeo, earthMat);
     globeGroup.add(earthMesh);
 
-    // --- Ethereal Atmospheric Glow (Radio Atlas aesthetic) ---
+    // --- Ethereal Atmospheric Glow (Safe Clamped Shader) ---
     const atmosphereVertexShader = `
       varying vec3 vNormal;
       void main() {
@@ -169,8 +203,8 @@ export default function GlobeView({
     const atmosphereFragmentShader = `
       varying vec3 vNormal;
       void main() {
-        float intensity = pow(0.62 - dot(vNormal, vec3(0, 0, 1.0)), 2.6);
-        gl_FragColor = vec4(0.0, 0.95, 1.0, 1.0) * intensity * 1.5;
+        float intensity = pow(clamp(0.65 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 0.0, 1.0), 2.2);
+        gl_FragColor = vec4(0.0, 0.95, 1.0, 1.0) * intensity * 1.4;
       }
     `;
     const atmosphereGeo = new THREE.SphereGeometry(earthRadius * 1.15, 64, 64);
@@ -184,20 +218,216 @@ export default function GlobeView({
     const atmosphereMesh = new THREE.Mesh(atmosphereGeo, atmosphereMat);
     scene.add(atmosphereMesh);
 
-    // --- Marker Meshes Group ---
+    // --- Group for markers ---
     const markersGroup = new THREE.Group();
     globeGroup.add(markersGroup);
+    markersGroupRef.current = markersGroup;
 
-    interface AnimatedRing {
-      mesh: THREE.Mesh;
-      baseScale: number;
-      phase: number;
-      speed: number;
+    // --- Initial Camera Alignment towards Active Coords ---
+    const initialTarget = latLonToVector3(activeCoords[0], activeCoords[1], earthRadius);
+    const initialRotY = -Math.atan2(initialTarget.x, initialTarget.z);
+    const initialRotX = Math.asin(initialTarget.y / earthRadius);
+    globeGroup.rotation.y = initialRotY;
+    globeGroup.rotation.x = initialRotX;
+
+    // --- Interactive Orbit & Drag Controls ---
+    let isDragging = false;
+    let previousMousePosition = { x: 0, y: 0 };
+    let velX = 0;
+    let velY = 0;
+    let autoRotate = true;
+
+    const onMouseDown = (e: MouseEvent) => {
+      isDragging = true;
+      autoRotate = false;
+      previousMousePosition = { x: e.clientX, y: e.clientY };
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      const rect = container.getBoundingClientRect();
+      const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      const mouseY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+
+      // Raycasting for marker tooltips
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), camera);
+      const intersects = raycaster.intersectObjects(interactiveObjectsRef.current, true);
+
+      if (intersects.length > 0) {
+        container.style.cursor = "pointer";
+        const hitData = intersects[0].object.userData;
+        if (hitData.markerData) {
+          setHoveredMarker({
+            marker: hitData.markerData,
+            screenX: e.clientX,
+            screenY: e.clientY
+          });
+        } else if (hitData.isUser) {
+          setHoveredMarker({
+            marker: {
+              id: "user-beacon",
+              lat: hitData.lat,
+              lon: hitData.lon,
+              geohash: "Local Seeder",
+              text: "Tu posición actual en el espacio-tiempo",
+              author: "Tú",
+              timestamp: Math.floor(Date.now() / 1000),
+              isLocal: true,
+              isTrusted: true
+            },
+            screenX: e.clientX,
+            screenY: e.clientY
+          });
+        }
+      } else {
+        container.style.cursor = isDragging ? "grabbing" : "grab";
+        setHoveredMarker(null);
+      }
+
+      if (!isDragging) return;
+
+      const deltaX = e.clientX - previousMousePosition.x;
+      const deltaY = e.clientY - previousMousePosition.y;
+
+      velX = deltaX * 0.005;
+      velY = deltaY * 0.005;
+
+      globeGroup.rotation.y += velX;
+      globeGroup.rotation.x += velY;
+
+      // Clamp vertical rotation so globe doesn't flip
+      globeGroup.rotation.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, globeGroup.rotation.x));
+
+      previousMousePosition = { x: e.clientX, y: e.clientY };
+    };
+
+    const onMouseUp = () => {
+      isDragging = false;
+    };
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const zoomFactor = e.deltaY * 0.12;
+      const newDist = THREE.MathUtils.clamp(camera.position.z + zoomFactor, 110, 400);
+      camera.position.z = newDist;
+
+      // Transition to 2D map when zooming into surface
+      if (newDist <= 118) {
+        callbacksRef.current.onSwitchTo2D();
+      }
+    };
+
+    const onClick = (e: MouseEvent) => {
+      const rect = container.getBoundingClientRect();
+      const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      const mouseY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), camera);
+
+      // Check marker hits first
+      const markerHits = raycaster.intersectObjects(interactiveObjectsRef.current, true);
+      if (markerHits.length > 0) {
+        const hit = markerHits[0].object.userData;
+        callbacksRef.current.onSelectLocation(hit.lat, hit.lon, hit.markerData);
+        return;
+      }
+
+      // Check Earth surface hits
+      const earthHits = raycaster.intersectObject(earthMesh);
+      if (earthHits.length > 0) {
+        const point = earthHits[0].point;
+        const localPoint = globeGroup.worldToLocal(point.clone());
+        const coords = vector3ToLatLon(localPoint);
+        callbacksRef.current.onSelectLocation(coords.lat, coords.lon);
+      }
+    };
+
+    const domElement = renderer.domElement;
+    domElement.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    domElement.addEventListener("wheel", onWheel, { passive: false });
+    domElement.addEventListener("click", onClick);
+
+    // --- Animation Loop ---
+    let reqId: number;
+    const clock = new THREE.Clock();
+
+    const animate = () => {
+      reqId = requestAnimationFrame(animate);
+      clock.getDelta();
+      const time = clock.getElapsedTime();
+
+      // Damping & Auto-rotation
+      if (!isDragging) {
+        velX *= 0.95;
+        velY *= 0.95;
+        globeGroup.rotation.y += velX;
+        globeGroup.rotation.x += velY;
+
+        if (autoRotate && Math.abs(velX) < 0.0005) {
+          globeGroup.rotation.y += 0.0012; // Slow hypnotic spin
+        }
+      }
+
+      // Pulsating Radio Garden Rings animation
+      animatedRingsRef.current.forEach(item => {
+        const t = (time * item.speed + item.phase) % 1;
+        const scale = item.baseScale * (1 + t * 2.2);
+        item.mesh.scale.set(scale, scale, 1);
+        const mat = item.mesh.material as THREE.MeshBasicMaterial;
+        mat.opacity = Math.max(0, 0.95 * (1 - t));
+      });
+
+      renderer.render(scene, camera);
+    };
+
+    animate();
+
+    // --- Resize Observer for Container ---
+    const resizeObserver = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const { width: w, height: h } = entry.contentRect;
+        if (w > 0 && h > 0) {
+          camera.aspect = w / h;
+          camera.updateProjectionMatrix();
+          renderer.setSize(w, h, false);
+        }
+      }
+    });
+    resizeObserver.observe(container);
+
+    return () => {
+      cancelAnimationFrame(reqId);
+      resizeObserver.disconnect();
+      domElement.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      domElement.removeEventListener("wheel", onWheel);
+      domElement.removeEventListener("click", onClick);
+
+      if (domElement.parentNode === container) {
+        container.removeChild(domElement);
+      }
+      renderer.dispose();
+      scene.clear();
+    };
+  }, [webglSupported]);
+
+  // --- 2. Marker Update Effect: updates nodes without disposing renderer ---
+  useEffect(() => {
+    const markersGroup = markersGroupRef.current;
+    if (!markersGroup) return;
+
+    // Clear previous markers
+    while (markersGroup.children.length > 0) {
+      const child = markersGroup.children[0];
+      markersGroup.remove(child);
     }
-    const animatedRings: AnimatedRing[] = [];
-    const interactiveObjects: THREE.Object3D[] = [];
+    animatedRingsRef.current = [];
+    interactiveObjectsRef.current = [];
 
-    // Helper to spawn a pulsating node
     const spawnNode = (
       lat: number,
       lon: number,
@@ -235,7 +465,7 @@ export default function GlobeView({
       ringMesh.position.z = 0.1;
       nodeRoot.add(ringMesh);
 
-      animatedRings.push({
+      animatedRingsRef.current.push({
         mesh: ringMesh,
         baseScale: 1,
         phase: Math.random() * Math.PI * 2,
@@ -261,211 +491,20 @@ export default function GlobeView({
       const hitMesh = new THREE.Mesh(hitGeo, hitMat);
       hitMesh.userData = { markerData, lat, lon, isUser };
       nodeRoot.add(hitMesh);
-      interactiveObjects.push(hitMesh);
+      interactiveObjectsRef.current.push(hitMesh);
 
       markersGroup.add(nodeRoot);
     };
 
-    // User position beacon (bright electric cyan)
+    // Spawn user position beacon
     spawnNode(userCoords[0], userCoords[1], 0x00f3ff, undefined, true);
 
-    // Spatial Graffitis
+    // Spawn spatial graffitis
     markers.forEach(m => {
       const color = m.isTrusted ? 0x10b981 : m.isLocal ? 0x00f3ff : 0xf59e0b;
       spawnNode(m.lat, m.lon, color, m, false);
     });
-
-    // --- Initial Camera Alignment towards Active / User Coords ---
-    const initialTarget = latLonToVector3(activeCoords[0], activeCoords[1], earthRadius);
-    const initialRotY = -Math.atan2(initialTarget.x, initialTarget.z);
-    const initialRotX = Math.asin(initialTarget.y / earthRadius);
-    globeGroup.rotation.y = initialRotY;
-    globeGroup.rotation.x = initialRotX;
-
-    // --- Interactive Orbit & Drag Controls ---
-    let isDragging = false;
-    let previousMousePosition = { x: 0, y: 0 };
-    let velX = 0;
-    let velY = 0;
-    let autoRotate = true;
-
-    const onMouseDown = (e: MouseEvent) => {
-      isDragging = true;
-      autoRotate = false;
-      previousMousePosition = { x: e.clientX, y: e.clientY };
-    };
-
-    const onMouseMove = (e: MouseEvent) => {
-      const rect = container.getBoundingClientRect();
-      const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      const mouseY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
-
-      // Raycasting for marker tooltips
-      const raycaster = new THREE.Raycaster();
-      raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), camera);
-      const intersects = raycaster.intersectObjects(interactiveObjects, true);
-
-      if (intersects.length > 0) {
-        container.style.cursor = "pointer";
-        const hitData = intersects[0].object.userData;
-        if (hitData.markerData) {
-          setHoveredMarker({
-            marker: hitData.markerData,
-            screenX: e.clientX,
-            screenY: e.clientY
-          });
-        } else if (hitData.isUser) {
-          setHoveredMarker({
-            marker: {
-              id: "user-beacon",
-              lat: userCoords[0],
-              lon: userCoords[1],
-              geohash: "Local Seeder",
-              text: "Tu posición actual en el espacio-tiempo",
-              author: "Tú",
-              timestamp: Math.floor(Date.now() / 1000),
-              isLocal: true,
-              isTrusted: true
-            },
-            screenX: e.clientX,
-            screenY: e.clientY
-          });
-        }
-      } else {
-        container.style.cursor = isDragging ? "grabbing" : "grab";
-        setHoveredMarker(null);
-      }
-
-      if (!isDragging) return;
-
-      const deltaX = e.clientX - previousMousePosition.x;
-      const deltaY = e.clientY - previousMousePosition.y;
-
-      velX = deltaX * 0.005;
-      velY = deltaY * 0.005;
-
-      globeGroup.rotation.y += velX;
-      globeGroup.rotation.x += velY;
-
-      // Clamp vertical rotation so globe doesn't invert
-      globeGroup.rotation.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, globeGroup.rotation.x));
-
-      previousMousePosition = { x: e.clientX, y: e.clientY };
-    };
-
-    const onMouseUp = () => {
-      isDragging = false;
-    };
-
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const zoomFactor = e.deltaY * 0.12;
-      const newDist = THREE.MathUtils.clamp(camera.position.z + zoomFactor, 120, 360);
-      camera.position.z = newDist;
-
-      // Smooth threshold transition to 2D map when zooming into surface
-      if (newDist <= 125) {
-        onSwitchTo2D();
-      }
-    };
-
-    const onClick = (e: MouseEvent) => {
-      const rect = container.getBoundingClientRect();
-      const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      const mouseY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
-
-      const raycaster = new THREE.Raycaster();
-      raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), camera);
-
-      // Check marker hits first
-      const markerHits = raycaster.intersectObjects(interactiveObjects, true);
-      if (markerHits.length > 0) {
-        const hit = markerHits[0].object.userData;
-        onSelectLocation(hit.lat, hit.lon, hit.markerData);
-        return;
-      }
-
-      // Check Earth surface hits
-      const earthHits = raycaster.intersectObject(earthMesh);
-      if (earthHits.length > 0) {
-        const point = earthHits[0].point;
-        // Transform clicked point to globe local space
-        const localPoint = globeGroup.worldToLocal(point.clone());
-        const coords = vector3ToLatLon(localPoint);
-        onSelectLocation(coords.lat, coords.lon);
-      }
-    };
-
-    const domElement = renderer.domElement;
-    domElement.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-    domElement.addEventListener("wheel", onWheel, { passive: false });
-    domElement.addEventListener("click", onClick);
-
-    // --- Animation Loop ---
-    let reqId: number;
-    let clock = new THREE.Clock();
-
-    const animate = () => {
-      reqId = requestAnimationFrame(animate);
-      clock.getDelta();
-      const time = clock.getElapsedTime();
-
-      // Damping & Auto-rotation
-      if (!isDragging) {
-        velX *= 0.95;
-        velY *= 0.95;
-        globeGroup.rotation.y += velX;
-        globeGroup.rotation.x += velY;
-
-        if (autoRotate && Math.abs(velX) < 0.0005) {
-          globeGroup.rotation.y += 0.0012; // Slow hypnotic spin
-        }
-      }
-
-      // Pulsating Radio Garden Rings animation
-      animatedRings.forEach(item => {
-        const t = (time * item.speed + item.phase) % 1;
-        const scale = item.baseScale * (1 + t * 2.2);
-        item.mesh.scale.set(scale, scale, 1);
-        const mat = item.mesh.material as THREE.MeshBasicMaterial;
-        mat.opacity = Math.max(0, 0.95 * (1 - t));
-      });
-
-      renderer.render(scene, camera);
-    };
-
-    animate();
-
-    // --- Resize Handler ---
-    const handleResize = () => {
-      if (!container) return;
-      const w = container.clientWidth || window.innerWidth;
-      const h = container.clientHeight || window.innerHeight;
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
-    };
-    window.addEventListener("resize", handleResize);
-
-    // Clean up
-    return () => {
-      cancelAnimationFrame(reqId);
-      window.removeEventListener("resize", handleResize);
-      domElement.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-      domElement.removeEventListener("wheel", onWheel);
-      domElement.removeEventListener("click", onClick);
-
-      if (container.contains(domElement)) {
-        container.removeChild(domElement);
-      }
-      renderer.dispose();
-      scene.clear();
-    };
-  }, [webglSupported, markers, userCoords, activeCoords, onSelectLocation, onSwitchTo2D]);
+  }, [markers, userCoords]);
 
   // Fallback for headless environments or no WebGL
   if (!webglSupported || !hasWebGL) {
@@ -594,7 +633,7 @@ export default function GlobeView({
 
       {/* Hint Banner at bottom */}
       <div className="globe-hint-banner">
-        <span>Arastra para rotar la Tierra • Rueda para zoom • Clic en un nodo o doble clic para aterrizar</span>
+        <span>Arrastra para rotar la Tierra • Rueda para zoom • Clic en un nodo o doble clic para aterrizar</span>
       </div>
     </div>
   );

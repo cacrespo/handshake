@@ -823,7 +823,7 @@ export default function App() {
   };
 
   // Combine lists of graffitis to show on map
-  const allGraffitis = [...localGraffitis, ...remoteGraffitis];
+  const allGraffitis = useMemo(() => [...localGraffitis, ...remoteGraffitis], [localGraffitis, remoteGraffitis]);
 
   // Map markers for the 3D Globe visualization (Radio Garden / Radio Atlas)
   const globeMarkers: GlobeMarker[] = useMemo(() => {
