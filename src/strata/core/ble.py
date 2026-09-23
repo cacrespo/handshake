@@ -1,8 +1,8 @@
 import abc
 import asyncio
-import threading
 import logging
-from typing import Callable, Optional
+import threading
+from collections.abc import Callable
 
 logger = logging.getLogger("strata.ble")
 
@@ -12,12 +12,10 @@ class BaseBLE(abc.ABC):
     @abc.abstractmethod
     def start_advertising(self, data: bytes):
         """Starts advertising the given data."""
-        pass
 
     @abc.abstractmethod
     def stop_advertising(self):
         """Stops advertising."""
-        pass
 
     @abc.abstractmethod
     def start_scanning(self, callback: Callable[[str, int, bytes], None]):
@@ -25,33 +23,30 @@ class BaseBLE(abc.ABC):
         Starts scanning for devices.
         Callback: (address, rssi, advertisement_data)
         """
-        pass
 
     @abc.abstractmethod
     def stop_scanning(self):
         """Stops scanning."""
-        pass
 
     @abc.abstractmethod
     def stop_all(self):
         """Stops all BLE activities."""
-        pass
 
 
 class BleakHAL(BaseBLE):
     """BLE implementation using the bleak library."""
 
     def __init__(self):
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._thread: Optional[threading.Thread] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
-        
+
         # Bleak specific components (to be initialized in the loop)
         self._scanner = None
-        self._advertising_data: Optional[bytes] = None
+        self._advertising_data: bytes | None = None
         self._is_advertising = False
         self._is_scanning = False
-        self._scan_callback: Optional[Callable] = None
+        self._scan_callback: Callable | None = None
 
         # Start the background event loop thread
         self._start_event_loop()
@@ -69,6 +64,15 @@ class BleakHAL(BaseBLE):
         try:
             self._loop.run_forever()
         finally:
+            try:
+                # Cancel all pending tasks cleanly
+                pending = asyncio.all_tasks(self._loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    self._loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            except Exception:
+                pass
             self._loop.close()
 
     def start_advertising(self, data: bytes):
@@ -79,7 +83,7 @@ class BleakHAL(BaseBLE):
             # On Linux (BlueZ), it's better handled via direct dbus or other tools if Bleak fails.
             # For now, we will use a placeholder or attempt a basic advertisement if available.
             self._is_advertising = True
-            
+
     def stop_advertising(self):
         self._is_advertising = False
         logger.info("Stopped BLE advertising")
@@ -92,7 +96,7 @@ class BleakHAL(BaseBLE):
 
     async def _run_scanning(self):
         from bleak import BleakScanner
-        
+
         def detection_callback(device, advertisement_data):
             if self._scan_callback and self._is_scanning:
                 # We look for our specific manufacturer data or service data
@@ -104,7 +108,7 @@ class BleakHAL(BaseBLE):
                         self._scan_callback(device.address, device.rssi, data)
 
         try:
-            async with BleakScanner(detection_callback) as scanner:
+            async with BleakScanner(detection_callback):
                 logger.info("BLE Scanning started")
                 while self._is_scanning:
                     await asyncio.sleep(1)

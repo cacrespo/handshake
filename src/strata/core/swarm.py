@@ -1,5 +1,6 @@
-import libtorrent as lt
 import os
+
+import libtorrent as lt
 
 
 class SwarmManager:

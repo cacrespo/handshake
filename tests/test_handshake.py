@@ -1,8 +1,10 @@
-import pytest
-import time
+import logging
 import os
 import shutil
-import logging
+import time
+
+import pytest
+
 from strata.core.engine import StrataEngine
 
 

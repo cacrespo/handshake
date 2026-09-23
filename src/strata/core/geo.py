@@ -1,7 +1,7 @@
 import hashlib
-import pygeohash as pgh
 from datetime import datetime
-from typing import Optional
+
+import pygeohash as pgh
 
 
 def get_geohash(lat: float, lon: float, precision: int = 7) -> str:
@@ -9,14 +9,14 @@ def get_geohash(lat: float, lon: float, precision: int = 7) -> str:
     return pgh.encode(lat, lon, precision=precision)
 
 
-def get_epoch_string(dt: Optional[datetime] = None) -> str:
+def get_epoch_string(dt: datetime | None = None) -> str:
     """Returns the current epoch identifier (YYYY-MM)."""
     if dt is None:
         dt = datetime.now()
     return dt.strftime("%Y-%m")
 
 
-def generate_info_hash(geohash: str, epoch: str, owner_pk: Optional[str] = None) -> str:
+def generate_info_hash(geohash: str, epoch: str, owner_pk: str | None = None) -> str:
     """
     Generates a deterministic InfoHash for the BitTorrent swarm.
     Format: SHA1(geohash + epoch + [owner_pk])

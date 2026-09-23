@@ -1,9 +1,12 @@
-import pytest
 import os
 import shutil
+
+import pytest
 from cryptography.hazmat.primitives.asymmetric import ed25519
-from strata.core.storage import StorageManager
+
 from strata.core.models import Message
+from strata.core.storage import StorageManager
+
 
 @pytest.fixture
 def clean_storage():
@@ -27,7 +30,7 @@ def test_message_thread_linking(clean_storage):
         content="Mensaje original de Alice",
     )
     msg_parent.sign(priv_alice)
-    
+
     # Guardar en almacenamiento
     storage.save_message(info_hash, msg_parent)
     assert msg_parent.verify(), "La firma del mensaje raíz debe ser válida"
@@ -42,7 +45,7 @@ def test_message_thread_linking(clean_storage):
         parent_signature=msg_parent.signature, # Apunta a la firma de Alice
     )
     msg_reply.sign(priv_bob)
-    
+
     storage.save_message(info_hash, msg_reply)
     assert msg_reply.verify(), "La firma de la respuesta debe ser válida"
     assert msg_reply.parent_signature == msg_parent.signature, "La respuesta debe enlazarse a la firma del padre"
@@ -50,7 +53,7 @@ def test_message_thread_linking(clean_storage):
     # 3. Cargar desde disco y verificar la reconstrucción del hilo
     loaded_messages = storage.load_messages(info_hash)
     assert len(loaded_messages) == 2, "Deben cargarse dos mensajes de la celda"
-    
+
     loaded_parent = next(m for m in loaded_messages if m.parent_signature is None)
     loaded_reply = next(m for m in loaded_messages if m.parent_signature is not None)
 

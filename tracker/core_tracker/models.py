@@ -1,5 +1,6 @@
 from django.db import models
 
+
 class ActivePeer(models.Model):
     peer_id = models.CharField(max_length=255, unique=True, primary_key=True)
     geohash = models.CharField(max_length=12, db_index=True)

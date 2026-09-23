@@ -1,8 +1,9 @@
 import json
 import time
-from typing import Optional, Dict, Any
-from cryptography.hazmat.primitives.asymmetric import ed25519
+from typing import Any
+
 from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric import ed25519
 
 
 class Message:
@@ -17,13 +18,13 @@ class Message:
         geohash: str,
         content: str,
         message_type: str = "PUBLIC",
-        owner_pk: Optional[bytes] = None,
-        parent_signature: Optional[bytes] = None,
-        timestamp: Optional[float] = None,
+        owner_pk: bytes | None = None,
+        parent_signature: bytes | None = None,
+        timestamp: float | None = None,
         proof_type: str = "NONE",
-        proof_data: Optional[str] = None,
-        signature: Optional[bytes] = None,
-        extra: Optional[Dict[str, Any]] = None,
+        proof_data: str | None = None,
+        signature: bytes | None = None,
+        extra: dict[str, Any] | None = None,
     ):
         self.author_pk = author_pk
         self.geohash = geohash
@@ -37,7 +38,7 @@ class Message:
         self.signature = signature
         self.extra = extra or {}
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serializes the message for signing or storage."""
         data = {
             "version": "1.0",
@@ -54,7 +55,7 @@ class Message:
             },
             "content": {"text": self.content},
         }
-        
+
         # Merge extra fields to preserve unrecognized metadata
         if self.extra:
             for k, v in self.extra.items():

@@ -1,9 +1,9 @@
-import json
-import os
 import glob
-import re
+import json
 import logging
-from typing import List, Optional
+import os
+import re
+
 from strata.core.models import Message
 
 logger = logging.getLogger("strata.storage")
@@ -65,7 +65,7 @@ class StorageManager:
         return file_path
 
     def cleanup(
-        self, info_hash: Optional[str] = None, exclude_path: Optional[str] = None
+        self, info_hash: str | None = None, exclude_path: str | None = None
     ):
         """
         Performs metabolism cleanup.
@@ -168,7 +168,7 @@ class StorageManager:
 
         return abs_path
 
-    def load_messages(self, info_hash: str) -> List[Message]:
+    def load_messages(self, info_hash: str) -> list[Message]:
         """Loads and verifies all messages in a swarm directory."""
         swarm_path = self.get_swarm_path(info_hash)
         messages = []

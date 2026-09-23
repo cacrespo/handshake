@@ -1,12 +1,12 @@
-import typer
-import time
-from typing import Optional
-from cryptography.hazmat.primitives.asymmetric import ed25519
-from strata.core.models import Message
-from strata.core.geo import get_geohash, get_epoch_string
-from strata.core.engine import StrataEngine
-
 import logging
+import time
+
+import typer
+from cryptography.hazmat.primitives.asymmetric import ed25519
+
+from strata.core.engine import StrataEngine
+from strata.core.geo import get_epoch_string, get_geohash
+from strata.core.models import Message
 
 # Basic logging configuration
 logging.basicConfig(
@@ -33,7 +33,7 @@ def write(
     lat: float = typer.Option(..., help="Latitude"),
     lon: float = typer.Option(..., help="Longitude"),
     precision: int = typer.Option(7, help="Geohash precision"),
-    anchored_to: Optional[str] = typer.Option(
+    anchored_to: str | None = typer.Option(
         None, help="Owner Public Key for anchored layers"
     ),
     storage_path: str = typer.Option("./storage", help="Path to storage"),
@@ -125,7 +125,7 @@ def relay_add(
     config_path: str = typer.Option("~/.strata", help="Path to config/identity"),
 ):
     """Adds a geohash to your persistent relay list."""
-    from strata.core.geo import get_epoch_string, generate_info_hash
+    from strata.core.geo import generate_info_hash, get_epoch_string
     from strata.core.relay import RelayManager
 
     rm = RelayManager(config_path=config_path)
@@ -172,14 +172,14 @@ def presence(
 ):
     """Scans for nearby verified peers using BLE."""
     engine = StrataEngine(storage_path=storage_path, config_path=config_path)
-    
+
     typer.echo(f"🔍 Scanning for physical presence ({scan_time}s)...")
     engine.presence.start()
-    
+
     try:
         time.sleep(scan_time)
         peers = engine.presence.get_nearby_peers()
-        
+
         if not peers:
             typer.echo("📭 No verified peers detected nearby.")
             return
