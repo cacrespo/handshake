@@ -3,7 +3,7 @@
 **Version:** `v0.2.0-draft` (Work in Progress)
 
 > [!NOTE]
-> This document represents the official technical specification of the Handshake protocol. It defines message schemas, cryptographic identity, sovereign storage, and wire protocols to ensure interoperability across clients (TypeScript Web frontend, mobile apps, and Python engine).
+> This document represents the official technical specification of the Handshake protocol. It defines message schemas, cryptographic identity, sovereign storage, and wire protocols to ensure interoperability across clients (TypeScript Web frontend, mobile apps, and Python engine). For core non-negotiable invariants, see [Architectural Invariants](architecture-invariants.md).
 
 ---
 
