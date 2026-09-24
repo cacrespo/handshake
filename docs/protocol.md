@@ -128,14 +128,36 @@ The Django Space-Time Tracker serves exclusively as a decentralized matchmaking 
 ### Message Types:
 
 #### 1. Peer Registration (`register`)
-Sent by the client upon connecting or moving to a new spatial cell:
+Sent by the client upon connecting or moving to a new spatial cell. Requires cryptographic authentication using the client's Ed25519 private key to prove key ownership and prevent peer impersonation, spoofing, and MITM signaling hijacking:
 ```json
 {
   "type": "register",
-  "peer_id": "ephemeral_client_uuid_or_pubkey_prefix",
-  "geohash": "69y7pg3"
+  "peer_id": "7b8a1c...64_hex_author_pubkey",
+  "geohash": "69y7pg3",
+  "timestamp": 1712345678,
+  "signature": "3f9c4a...128_hex_signature"
 }
 ```
+
+##### Authentication Challenge Payload:
+To prove ownership of `peer_id`, the client signs the following deterministic ASCII string with its Ed25519 private key:
+```
+REGISTER:<peer_id>:<geohash>:<timestamp>
+```
+The tracker server verifies:
+1. `peer_id` is a 32-byte Ed25519 public key in hexadecimal format (64 characters).
+2. `timestamp` is within an acceptable skew window ($\pm 120$ seconds) of server time to prevent replay attacks.
+3. `signature` is a valid detached Ed25519 signature of the challenge string for that `peer_id`.
+
+If authentication succeeds, the tracker registers or updates the peer in `ActivePeer`. If authentication fails or fields are missing/expired, the tracker returns an error payload and discards the registration:
+```json
+{
+  "type": "error",
+  "code": "AUTH_FAILED",
+  "message": "Invalid registration signature or expired timestamp"
+}
+```
+
 
 #### 2. Nearby Peer List (`peer_list`)
 Sent by the Tracker back to the registering client containing all active peers in the matching zone (`geohash[:5]`):

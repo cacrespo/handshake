@@ -1,9 +1,48 @@
 import json
+import time
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
+from cryptography.hazmat.primitives.asymmetric import ed25519
 
 from core_tracker.models import ActivePeer
+
+MAX_TIMESTAMP_SKEW_SECONDS = 120
+
+
+def verify_registration_signature(
+    peer_id: str,
+    geohash: str,
+    timestamp: int | float | str,
+    signature: str,
+    max_skew_seconds: int = MAX_TIMESTAMP_SKEW_SECONDS,
+) -> bool:
+    """Verifies that the registration message was signed by the private key
+    corresponding to peer_id (Ed25519 public key in 64-hex format).
+
+    The signed challenge is: 'REGISTER:<peer_id>:<geohash>:<int(timestamp)>'
+    """
+    try:
+        now = time.time()
+        ts = int(float(timestamp))
+        if abs(now - ts) > max_skew_seconds:
+            return False
+
+        if not isinstance(peer_id, str) or len(peer_id) != 64:
+            return False
+
+        if not isinstance(signature, str) or len(signature) != 128:
+            return False
+
+        pub_bytes = bytes.fromhex(peer_id)
+        sig_bytes = bytes.fromhex(signature)
+
+        challenge = f"REGISTER:{peer_id}:{geohash}:{ts}".encode("utf-8")
+        pub_key = ed25519.Ed25519PublicKey.from_public_bytes(pub_bytes)
+        pub_key.verify(sig_bytes, challenge)
+        return True
+    except Exception:
+        return False
 
 
 class TrackerConsumer(AsyncWebsocketConsumer):
@@ -34,7 +73,31 @@ class TrackerConsumer(AsyncWebsocketConsumer):
         if msg_type == "register":
             peer_id = data.get("peer_id")
             geohash = data.get("geohash")
-            if not peer_id or not geohash:
+            timestamp = data.get("timestamp")
+            signature = data.get("signature")
+
+            if not peer_id or not geohash or timestamp is None or not signature:
+                await self.send(text_data=json.dumps({
+                    "type": "error",
+                    "code": "AUTH_FAILED",
+                    "message": "Missing required registration fields (peer_id, geohash, timestamp, signature)"
+                }))
+                return
+
+            if not verify_registration_signature(peer_id, geohash, timestamp, signature):
+                await self.send(text_data=json.dumps({
+                    "type": "error",
+                    "code": "AUTH_FAILED",
+                    "message": "Invalid registration signature or expired timestamp"
+                }))
+                return
+
+            if self.peer_id and self.peer_id != peer_id:
+                await self.send(text_data=json.dumps({
+                    "type": "error",
+                    "code": "AUTH_FAILED",
+                    "message": "Cannot re-register with different peer_id on same connection"
+                }))
                 return
 
             # Si el peer ya estaba registrado y cambia de zona (geohash[:5]), dejamos la sala anterior y notificamos la partida.
@@ -84,6 +147,14 @@ class TrackerConsumer(AsyncWebsocketConsumer):
             )
 
         elif msg_type == "signal":
+            if not self.peer_id:
+                await self.send(text_data=json.dumps({
+                    "type": "error",
+                    "code": "UNAUTHENTICATED",
+                    "message": "Must register and authenticate before sending signaling messages"
+                }))
+                return
+
             target_peer_id = data.get("target")
             signal_data = data.get("signal")
 

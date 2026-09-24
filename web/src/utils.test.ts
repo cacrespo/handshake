@@ -9,6 +9,8 @@ import {
   loadKeyPair,
   getSeedFromKeyPair,
   exportKeyData,
+  signTrackerRegistration,
+  verifyTrackerRegistration,
 } from "./utils";
 
 describe("Key Format & TweetNaCl Compatibility (SEC-03)", () => {
@@ -179,3 +181,38 @@ describe("Message Signing & Verification", () => {
     expect(verifyMessage(signedMsg)).toBe(true);
   });
 });
+
+describe("Tracker Registration Authentication (SEC-02)", () => {
+  const seedHex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  const pubHex = "207a067892821e25d770f1fba0c47c11ff4b813e54162ece9eb839e076231ab6";
+  const geohash = "69y7pg3";
+  const timestamp = 1712345678;
+
+  it("generates a valid Ed25519 signature for the registration challenge", () => {
+    const sigHex = signTrackerRegistration(pubHex, geohash, timestamp, seedHex);
+    expect(sigHex.length).toBe(128); // 64 bytes = 128 hex chars
+
+    const valid = verifyTrackerRegistration(pubHex, geohash, timestamp, sigHex);
+    expect(valid).toBe(true);
+  });
+
+  it("fails verification if geohash is altered", () => {
+    const sigHex = signTrackerRegistration(pubHex, geohash, timestamp, seedHex);
+    const valid = verifyTrackerRegistration(pubHex, "69y7pba", timestamp, sigHex);
+    expect(valid).toBe(false);
+  });
+
+  it("fails verification if timestamp is altered", () => {
+    const sigHex = signTrackerRegistration(pubHex, geohash, timestamp, seedHex);
+    const valid = verifyTrackerRegistration(pubHex, geohash, timestamp + 1, sigHex);
+    expect(valid).toBe(false);
+  });
+
+  it("fails verification if peerId is altered (spoofing)", () => {
+    const sigHex = signTrackerRegistration(pubHex, geohash, timestamp, seedHex);
+    const spoofedPubHex = "1111111111111111111111111111111111111111111111111111111111111111";
+    const valid = verifyTrackerRegistration(spoofedPubHex, geohash, timestamp, sigHex);
+    expect(valid).toBe(false);
+  });
+});
+

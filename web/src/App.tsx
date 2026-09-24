@@ -28,7 +28,8 @@ import {
   loadKeyPair,
   getSeedFromKeyPair,
   exportKeyData,
-  utf8ToBytes
+  utf8ToBytes,
+  signTrackerRegistration
 } from "./utils";
 
 
@@ -500,6 +501,8 @@ export default function App() {
           }
         } else if (data.type === "signal") {
           handleIncomingSignal(data.sender, data.signal);
+        } else if (data.type === "error") {
+          addLog(`[Tracker] ${data.code}: ${data.message}`, "danger");
         }
       } catch (err) {
         console.error("Error parsing WebSocket message:", err);
@@ -509,12 +512,22 @@ export default function App() {
 
   const announcePresence = () => {
     if (!ws.current || ws.current.readyState !== WebSocket.OPEN) return;
-    addLog(`Registering presence with Geohash: ${geohash}`, "info");
-    ws.current.send(JSON.stringify({
-      type: "register",
-      peer_id: publicKey,
-      geohash: geohash
-    }));
+    if (!publicKey || !secretKey || !geohash) return;
+    try {
+      const timestamp = Math.floor(Date.now() / 1000);
+      const signature = signTrackerRegistration(publicKey, geohash, timestamp, secretKey);
+      addLog(`Registering authenticated presence with Geohash: ${geohash}`, "info");
+      ws.current.send(JSON.stringify({
+        type: "register",
+        peer_id: publicKey,
+        geohash: geohash,
+        timestamp: timestamp,
+        signature: signature
+      }));
+    } catch (err) {
+      console.error("Failed to sign presence challenge:", err);
+      addLog("Failed to sign presence challenge.", "danger");
+    }
   };
 
   // Trigger registration update on coordinates change
