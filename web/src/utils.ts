@@ -171,3 +171,34 @@ export function verifyMessage(msg: any): boolean {
     return false;
   }
 }
+
+export function signTrackerRegistration(
+  peerId: string,
+  geohash: string,
+  timestamp: number,
+  secretKey: Uint8Array | string
+): string {
+  const keyPair = loadKeyPair(secretKey);
+  const challenge = `REGISTER:${peerId}:${geohash}:${Math.floor(timestamp)}`;
+  const dataBytes = utf8ToBytes(challenge);
+  const sigBytes = nacl.sign.detached(dataBytes, keyPair.secretKey);
+  return toHex(sigBytes);
+}
+
+export function verifyTrackerRegistration(
+  peerId: string,
+  geohash: string,
+  timestamp: number,
+  signature: string
+): boolean {
+  try {
+    const challenge = `REGISTER:${peerId}:${geohash}:${Math.floor(timestamp)}`;
+    const dataBytes = utf8ToBytes(challenge);
+    const sigBytes = fromHex(signature);
+    const pubBytes = fromHex(peerId);
+    return nacl.sign.detached.verify(dataBytes, sigBytes, pubBytes);
+  } catch {
+    return false;
+  }
+}
+
