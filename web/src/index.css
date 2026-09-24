@@ -1,20 +1,20 @@
 :root {
-  --bg-dark: #050b14; /* Deep Navy Blue (Argentina 86 away kit base) */
-  --bg-panel: rgba(12, 24, 43, 0.85); /* Semi-transparent navy panel */
-  --bg-card: rgba(20, 38, 68, 0.7); /* Slightly lighter navy for cards */
-  --border-color: rgba(117, 170, 219, 0.2); /* Sky blue border tint */
-  --border-glow: rgba(117, 170, 219, 0.5); /* Sky blue glow */
-  --text-primary: #f3f4f6;
-  --text-secondary: #a3b8cc; /* Soft bluish gray */
-  --text-muted: #62778c;
-  --accent: #75AADB; /* Argentine Celeste / Sky Blue */
-  --accent-hover: #9ec8f2;
-  --accent-glow: rgba(117, 170, 219, 0.25);
-  --success: #ffffff; /* White (Trusted) */
-  --success-glow: rgba(255, 255, 255, 0.15);
-  --warning: #f1c40f; /* Sun of May Gold */
+  --bg-dark: #0a0b10; /* Deep space / dark slate base */
+  --bg-panel: rgba(13, 17, 27, 0.85); /* Semi-transparent glassmorphic panel */
+  --bg-card: rgba(19, 25, 39, 0.72); /* Sleek card background */
+  --border-color: rgba(255, 255, 255, 0.08); /* 1px crisp border */
+  --border-glow: rgba(0, 243, 255, 0.4); /* Neon cyan glow */
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8; /* Soft slate */
+  --text-muted: #64748b;
+  --accent: #00f3ff; /* Neon cyan */
+  --accent-hover: #38bdf8;
+  --accent-glow: rgba(0, 243, 255, 0.25);
+  --success: #10b981; /* Neon emerald */
+  --success-glow: rgba(16, 185, 129, 0.2);
+  --warning: #f59e0b; /* Neon amber */
   --danger: #ef4444;
-  --sans: 'Outfit', 'Inter', -apple-system, sans-serif;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --mono: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
