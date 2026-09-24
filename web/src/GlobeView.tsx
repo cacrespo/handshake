@@ -237,7 +237,6 @@ export default function GlobeView({
     let velY = 0;
     let autoRotate = true;
 
-    let mouseDownPos = { x: 0, y: 0 };
     let dragDistance = 0;
 
     const onMouseDown = (e: MouseEvent) => {
@@ -245,7 +244,6 @@ export default function GlobeView({
       autoRotate = false;
       dragDistance = 0;
       previousMousePosition = { x: e.clientX, y: e.clientY };
-      mouseDownPos = { x: e.clientX, y: e.clientY };
     };
 
     const onMouseMove = (e: MouseEvent) => {
