@@ -1,3 +1,5 @@
+import nacl from "tweetnacl";
+
 // Hex conversion helpers
 export const toHex = (arr: Uint8Array): string =>
   Array.from(arr)
@@ -12,6 +14,34 @@ export const fromHex = (hex: string): Uint8Array => {
   }
   return view;
 };
+
+// UTF-8 string to Uint8Array helper ensuring local Uint8Array realm
+export const utf8ToBytes = (str: string): Uint8Array => {
+  const raw = new TextEncoder().encode(str);
+  return new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+};
+
+// Key format management & tweetnacl compatibility helpers
+export function loadKeyPair(keyData: Uint8Array | string): nacl.SignKeyPair {
+  const rawBytes = typeof keyData === "string" ? fromHex(keyData) : keyData;
+  if (rawBytes.length === 32) {
+    return nacl.sign.keyPair.fromSeed(rawBytes);
+  } else if (rawBytes.length === 64) {
+    return nacl.sign.keyPair.fromSecretKey(rawBytes);
+  }
+  throw new Error(`Invalid private key length: ${rawBytes.length} bytes (expected 32-byte seed or 64-byte secret key)`);
+}
+
+export function getSeedFromKeyPair(keyPair: nacl.SignKeyPair): Uint8Array {
+  return keyPair.secretKey.subarray(0, 32);
+}
+
+export function exportKeyData(keyPair: nacl.SignKeyPair): { public_key: string; private_key: string } {
+  return {
+    public_key: toHex(keyPair.publicKey),
+    private_key: toHex(getSeedFromKeyPair(keyPair)),
+  };
+}
 
 // Geohash helper (precision 7 for local nodes)
 const BASE32 = "0123456789bcdefghjkmnpqrstuvwxyz";
@@ -95,16 +125,49 @@ export function decodeGeohash(geohash: string): { lat: number; lon: number } {
   };
 }
 
-// Canonical JSON stringify matching Python sort_keys=True recursively
+// Canonical JSON stringify matching Python sort_keys=True recursively (no whitespace)
 export function canonicalStringify(obj: any): string {
-  if (obj === null) return "null";
+  if (obj === null || obj === undefined) return "null";
   if (typeof obj !== "object") {
     return JSON.stringify(obj);
   }
   if (Array.isArray(obj)) {
     return "[" + obj.map(canonicalStringify).join(",") + "]";
   }
-  const keys = Object.keys(obj).sort();
+  const keys = Object.keys(obj)
+    .filter((k) => obj[k] !== undefined)
+    .sort();
   const pairs = keys.map((k) => JSON.stringify(k) + ":" + canonicalStringify(obj[k]));
   return "{" + pairs.join(",") + "}";
+}
+
+export function getSigningData(msg: any): string {
+  // Deep clone to avoid mutating input and strip header.signature
+  const data = JSON.parse(JSON.stringify(msg));
+  if (data && data.header && typeof data.header === "object") {
+    delete data.header.signature;
+  }
+  return canonicalStringify(data);
+}
+
+export function signMessage(msg: any, secretKey: Uint8Array | string): string {
+  const keyPair = loadKeyPair(secretKey);
+  const signingData = getSigningData(msg);
+  const dataBytes = utf8ToBytes(signingData);
+  const sigBytes = nacl.sign.detached(dataBytes, keyPair.secretKey);
+  return toHex(sigBytes);
+}
+
+export function verifyMessage(msg: any): boolean {
+  if (!msg || !msg.header || !msg.header.signature || !msg.header.author_pk) return false;
+  try {
+    const signingData = getSigningData(msg);
+    const dataBytes = utf8ToBytes(signingData);
+    const signatureBytes = fromHex(msg.header.signature);
+    const publicKeyBytes = fromHex(msg.header.author_pk);
+    return nacl.sign.detached.verify(dataBytes, signatureBytes, publicKeyBytes);
+  } catch (e) {
+    console.error("Signature verification failed:", e);
+    return false;
+  }
 }

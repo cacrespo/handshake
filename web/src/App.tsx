@@ -19,31 +19,19 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-import { toHex, fromHex, encodeGeohash, decodeGeohash, canonicalStringify } from "./utils";
+import {
+  toHex,
+  encodeGeohash,
+  decodeGeohash,
+  canonicalStringify,
+  verifyMessage,
+  loadKeyPair,
+  getSeedFromKeyPair,
+  exportKeyData,
+  utf8ToBytes
+} from "./utils";
 
-function getSigningData(msg: any) {
-  // Clonar el mensaje para evitar modificar el original y remover la firma
-  const data = JSON.parse(JSON.stringify(msg));
-  if (data.header) {
-    delete data.header.signature;
-  }
-  return canonicalStringify(data);
-}
 
-function verifyMessage(msg: any): boolean {
-  if (!msg.header || !msg.header.signature || !msg.header.author_pk) return false;
-  try {
-    const signingData = getSigningData(msg);
-    const encoder = new TextEncoder();
-    const dataBytes = encoder.encode(signingData);
-    const signatureBytes = fromHex(msg.header.signature);
-    const publicKeyBytes = fromHex(msg.header.author_pk);
-    return nacl.sign.detached.verify(dataBytes, signatureBytes, publicKeyBytes);
-  } catch (e) {
-    console.error("Signature verification failed:", e);
-    return false;
-  }
-}
 
 function getDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371e3; // metres
@@ -288,7 +276,6 @@ export default function App() {
 
   // 1. Initialize Cryptographic Identity (Ed25519)
   useEffect(() => {
-    const storedPub = localStorage.getItem("handshake_pubkey");
     const storedSec = localStorage.getItem("handshake_seckey");
     const storedTrust = localStorage.getItem("handshake_trust");
     if (storedTrust) {
@@ -299,10 +286,20 @@ export default function App() {
       }
     }
 
-    if (storedPub && storedSec) {
-      setPublicKey(storedPub);
-      setSecretKey(storedSec);
-      addLog("Cryptographic identity loaded from localStorage", "success");
+    if (storedSec) {
+      try {
+        const kp = loadKeyPair(storedSec);
+        const pubHex = toHex(kp.publicKey);
+        const seedHex = toHex(getSeedFromKeyPair(kp));
+        localStorage.setItem("handshake_pubkey", pubHex);
+        localStorage.setItem("handshake_seckey", seedHex);
+        setPublicKey(pubHex);
+        setSecretKey(seedHex);
+        addLog("Cryptographic identity loaded from localStorage", "success");
+      } catch (e) {
+        console.error("Error loading key from localStorage, generating new:", e);
+        generateNewIdentity();
+      }
     } else {
       generateNewIdentity();
     }
@@ -338,24 +335,30 @@ export default function App() {
   const generateNewIdentity = () => {
     const kp = nacl.sign.keyPair();
     const pubHex = toHex(kp.publicKey);
-    const secHex = toHex(kp.secretKey);
+    const seedHex = toHex(getSeedFromKeyPair(kp));
     localStorage.setItem("handshake_pubkey", pubHex);
-    localStorage.setItem("handshake_seckey", secHex);
+    localStorage.setItem("handshake_seckey", seedHex);
     setPublicKey(pubHex);
-    setSecretKey(secHex);
+    setSecretKey(seedHex);
     addLog("Created new ephemeral identity", "success");
   };
 
   const exportKey = () => {
-    const keyData = JSON.stringify({ public_key: publicKey, private_key: secretKey }, null, 2);
-    const blob = new Blob([keyData], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `handshake_identity_${publicKey.substring(0, 8)}.key`;
-    a.click();
-    URL.revokeObjectURL(url);
-    addLog("Identity exported as .key file", "success");
+    if (!secretKey) return;
+    try {
+      const kp = loadKeyPair(secretKey);
+      const keyData = JSON.stringify(exportKeyData(kp), null, 2);
+      const blob = new Blob([keyData], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `handshake_identity_${publicKey.substring(0, 8)}.key`;
+      a.click();
+      URL.revokeObjectURL(url);
+      addLog("Identity exported as .key file", "success");
+    } catch (err: any) {
+      addLog(`Error exporting key: ${err.message}`, "danger");
+    }
   };
 
   const importKey = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -365,19 +368,21 @@ export default function App() {
     reader.onload = (event) => {
       try {
         const keys = JSON.parse(event.target?.result as string);
-        const pubKey = keys.public_key || keys.publicKey;
-        const secKey = keys.private_key || keys.secretKey;
-        if (pubKey && secKey) {
-          localStorage.setItem("handshake_pubkey", pubKey);
-          localStorage.setItem("handshake_seckey", secKey);
-          setPublicKey(pubKey);
-          setSecretKey(secKey);
+        const secKey = keys.private_key || keys.secretKey || keys.privateKey;
+        if (secKey) {
+          const kp = loadKeyPair(secKey);
+          const derivedPubHex = toHex(kp.publicKey);
+          const seedHex = toHex(getSeedFromKeyPair(kp));
+          localStorage.setItem("handshake_pubkey", derivedPubHex);
+          localStorage.setItem("handshake_seckey", seedHex);
+          setPublicKey(derivedPubHex);
+          setSecretKey(seedHex);
           addLog("Identity imported successfully!", "success");
         } else {
           addLog("Invalid .key format. Keys not found.", "danger");
         }
-      } catch (err) {
-        addLog("Error parsing key file.", "danger");
+      } catch (err: any) {
+        addLog(`Error parsing key file: ${err.message}`, "danger");
       }
     };
     reader.readAsText(file);
@@ -704,7 +709,7 @@ export default function App() {
     }
 
     const targetTimestamp = getTargetTimestamp();
-    const secretKeyBytes = fromHex(secretKey);
+    const kp = loadKeyPair(secretKey);
 
     const messageToSign = {
       version: "1.0",
@@ -728,9 +733,8 @@ export default function App() {
     };
 
     const signingString = canonicalStringify(messageToSign);
-    const encoder = new TextEncoder();
-    const signingBytes = encoder.encode(signingString);
-    const sigBytes = nacl.sign.detached(signingBytes, secretKeyBytes);
+    const signingBytes = utf8ToBytes(signingString);
+    const sigBytes = nacl.sign.detached(signingBytes, kp.secretKey);
     const signatureHex = toHex(sigBytes);
 
     const fullySignedMessage = {

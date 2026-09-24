@@ -40,9 +40,10 @@ To enable sovereign import and export of keys between clients (Web, CLI, mobile)
 ```json
 {
   "public_key": "hexadecimal_public_key_64_characters",
-  "private_key": "hexadecimal_private_key_64_or_128_characters"
+  "private_key": "hexadecimal_private_seed_64_characters"
 }
 ```
+*Standardized on a 32-byte private seed (64 hex characters) when exporting. For backward compatibility, clients also accept legacy 64-byte secret keys (128 hex characters) during import.*
 
 ---
 

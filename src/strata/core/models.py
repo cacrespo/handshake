@@ -74,7 +74,7 @@ class Message:
             # Make a copy and delete signature key
             data = json.loads(json.dumps(data))
             data["header"].pop("signature", None)
-        return json.dumps(data, sort_keys=True).encode("utf-8")
+        return json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
     def sign(self, private_key: ed25519.Ed25519PrivateKey):
         """Signs the message using the author's private key."""
