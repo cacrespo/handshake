@@ -79,4 +79,55 @@ describe('App Component', () => {
 
     expect(screen.queryByPlaceholderText(/Escribe el graffiti o huella/i)).not.toBeInTheDocument();
   });
+
+  it('renders the P2P live HUD with WebRTC peers, active geohash, and strata-sync status', () => {
+    render(<App />);
+    expect(screen.getByText(/Peers:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Celda:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Strata-Sync:/i)).toBeInTheDocument();
+  });
+
+  it('toggles seamlessly between 3D Globe view and 2D Map view', () => {
+    render(<App />);
+
+    // Initially in 3D Globe mode (fallback in jsdom)
+    expect(screen.getByTestId('globe-view-fallback')).toBeInTheDocument();
+    expect(screen.getByText(/Visualización 3D Radio Garden/i)).toBeInTheDocument();
+
+    // Click on "Mapa 2D" via the view mode switcher button title
+    const map2dBtn = screen.getByTitle('Vista de Mapa 2D Local');
+    fireEvent.click(map2dBtn);
+
+    // Now 2D Map is active
+    expect(screen.getByTestId('mock-map')).toBeInTheDocument();
+    expect(screen.getByText(/Vista Globo 3D/i)).toBeInTheDocument();
+
+    // Click back on "Globo 3D" via view mode switcher button title
+    const globe3dBtn = screen.getByTitle('Vista Global 3D (Radio Garden / Radio Atlas)');
+    fireEvent.click(globe3dBtn);
+
+    // Globe mode is restored
+    expect(screen.getByTestId('globe-view-fallback')).toBeInTheDocument();
+  });
+
+  it('supports sovereign location selection in composer modal', () => {
+    render(<App />);
+
+    // Open composer
+    const openBtn = screen.getByRole('button', { name: /Pintar Graffiti/i });
+    fireEvent.click(openBtn);
+
+    // Verify sovereign location selector
+    expect(screen.getByText(/Ubicación Soberana de Publicación/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Punto seleccionado en Mapa\/Globo/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /GPS actual/i })).toBeInTheDocument();
+
+    // Toggle location mode
+    const pickedBtn = screen.getByRole('button', { name: /Punto seleccionado en Mapa\/Globo/i });
+    expect(pickedBtn).toHaveClass('active');
+
+    const gpsBtn = screen.getByRole('button', { name: /GPS actual/i });
+    fireEvent.click(gpsBtn);
+    expect(gpsBtn).toHaveClass('active');
+  });
 });

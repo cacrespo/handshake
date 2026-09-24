@@ -66,7 +66,11 @@ def test_python_verifies_web_signed_message():
     assert msg.verify() is False
 
 
-@pytest.mark.skipif(not shutil.which("node"), reason="Node.js not installed")
+TWEETNACL_PATH = Path(__file__).resolve().parent.parent / "web" / "node_modules" / "tweetnacl"
+HAS_NODE_TWEETNACL = bool(shutil.which("node")) and TWEETNACL_PATH.exists()
+
+
+@pytest.mark.skipif(not HAS_NODE_TWEETNACL, reason="Node.js or web/node_modules/tweetnacl not available")
 def test_end_to_end_bidirectional_signature_verification():
     """End-to-end test executing TweetNaCl via Node.js to verify bidirectional compatibility."""
     # 1. Python signs message -> Node verifies using TweetNaCl
@@ -88,7 +92,7 @@ def test_end_to_end_bidirectional_signature_verification():
     message_dict = msg.to_dict()
     message_dict["header"]["signature"] = sig_hex
 
-    node_pkg_path = str(Path('web/node_modules/tweetnacl').resolve())
+    node_pkg_path = str(TWEETNACL_PATH.resolve())
     node_verify_script = f"""
     const nacl = require({json.dumps(node_pkg_path)});
     const msg = {json.dumps(message_dict)};
