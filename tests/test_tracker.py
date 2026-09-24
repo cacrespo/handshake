@@ -15,6 +15,9 @@ import django
 
 django.setup()
 
+from django.core.management import call_command
+call_command("migrate", verbosity=0)
+
 from channels.testing import WebsocketCommunicator
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from core_tracker.consumers import TrackerConsumer
