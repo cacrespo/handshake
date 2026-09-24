@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from strata.core.models import Message
-from strata.core.identity import IdentityManager
 
 TEST_SEED_HEX = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 EXPECTED_PUBKEY_HEX = "207a067892821e25d770f1fba0c47c11ff4b813e54162ece9eb839e076231ab6"
