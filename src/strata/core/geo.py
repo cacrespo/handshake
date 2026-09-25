@@ -9,6 +9,12 @@ def get_geohash(lat: float, lon: float, precision: int = 7) -> str:
     return pgh.encode(lat, lon, precision=precision)
 
 
+def decode_geohash(geohash: str) -> tuple[float, float]:
+    """Converts a geohash string to (latitude, longitude) center coordinates."""
+    res = pgh.decode(geohash)
+    return (float(res[0]), float(res[1]))
+
+
 def get_epoch_string(dt: datetime | None = None) -> str:
     """Returns the current epoch identifier (YYYY-MM)."""
     if dt is None:

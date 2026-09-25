@@ -269,5 +269,90 @@ def node(
         engine.stop()
 
 
+agent_app = typer.Typer(help="Autonomous agents for Handshake")
+app.add_typer(agent_app, name="agent")
+
+
+@agent_app.command("news-crawl")
+def news_crawl(
+    once: bool = typer.Option(
+        True,
+        "--once/--daemon",
+        help="Run crawl once or run continuously as a daemon",
+    ),
+    limit: int = typer.Option(
+        5,
+        "--limit",
+        "-n",
+        help="Maximum news items to crawl per feed",
+    ),
+    interval: int = typer.Option(
+        300,
+        "--interval",
+        "-i",
+        help="Interval in seconds for daemon mode (default: 300s)",
+    ),
+    storage_path: str = typer.Option(
+        "./storage/strata.duckdb",
+        help="Path to DuckDB database file",
+    ),
+    config_path: str = typer.Option(
+        "~/.strata",
+        help="Path to config/identity directory",
+    ),
+    seeding_storage_path: str | None = typer.Option(
+        None,
+        help="Optional path to StorageManager base directory for P2P swarm seeding",
+    ),
+):
+    """
+    Crawls Argentine news feeds, resolves spatio-temporal locations,
+    signs graffiti messages with Ed25519 identity, and seeds them into DuckDB.
+    """
+    from strata.agents.crawler import ArgentineNewsAgent
+    from strata.core.identity import IdentityManager
+    from strata.core.storage import StorageManager, StrataStorage
+
+    typer.echo("🇦🇷 Starting Argentine News Crawler & Spatio-Temporal Seeder Agent")
+    typer.echo(f"📂 DuckDB Storage: {storage_path}")
+
+    storage = StrataStorage(storage_path)
+    identity_manager = IdentityManager(config_path)
+    typer.echo(f"🔑 Agent Identity PK: {identity_manager.get_public_key_hex()}")
+
+    storage_manager = None
+    if seeding_storage_path:
+        storage_manager = StorageManager(base_path=seeding_storage_path)
+        typer.echo(f"📡 P2P Seeding directory: {seeding_storage_path}")
+
+    agent = ArgentineNewsAgent(
+        storage=storage,
+        identity_manager=identity_manager,
+        storage_manager=storage_manager,
+    )
+
+    if once:
+        typer.echo(f"🔍 Running single crawl cycle (limit: {limit} items/feed)...")
+        messages = agent.crawl_all(limit_per_feed=limit)
+        typer.echo(
+            f"✅ Crawl complete! Ingested {len(messages)} new graffitis into DuckDB."
+        )
+        for msg in messages[:5]:
+            first_line = msg.content.splitlines()[0] if msg.content else "Graffiti"
+            loc_name = msg.extra.get("resolved_location", {}).get("name", "")
+            loc_label = f" ({loc_name})" if loc_name else ""
+            typer.echo(f"  📍 [{msg.geohash}]{loc_label} {first_line}")
+        if len(messages) > 5:
+            typer.echo(f"  ... and {len(messages) - 5} more.")
+    else:
+        typer.echo(
+            f"🔄 Running news agent in daemon mode (interval: {interval}s). Press Ctrl+C to stop."
+        )
+        try:
+            agent.run_daemon(interval=interval, limit_per_feed=limit)
+        except KeyboardInterrupt:
+            typer.echo("\n🛑 News agent daemon stopped.")
+
+
 if __name__ == "__main__":
     app()
