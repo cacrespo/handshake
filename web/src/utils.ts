@@ -7,13 +7,61 @@ export const toHex = (arr: Uint8Array): string =>
     .join("");
 
 export const fromHex = (hex: string): Uint8Array => {
-  const cleanHex = hex.replace(/[^a-fA-F0-9]/g, "");
-  const view = new Uint8Array(cleanHex.length / 2);
-  for (let i = 0; i < cleanHex.length; i += 2) {
-    view[i / 2] = parseInt(cleanHex.substring(i, i + 2), 16);
+  if (typeof hex !== "string") {
+    throw new TypeError("Invalid hex string: input must be a string");
+  }
+  if (hex.length === 0) {
+    return new Uint8Array(0);
+  }
+  if (hex.length % 2 !== 0) {
+    throw new Error(`Invalid hex string: length must be even, got length ${hex.length}`);
+  }
+  if (!/^[0-9a-fA-F]+$/.test(hex)) {
+    throw new Error("Invalid hex string: contains non-hexadecimal characters");
+  }
+  const view = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    view[i / 2] = parseInt(hex.substring(i, i + 2), 16);
   }
   return view;
 };
+
+// WebRTC DataChannel message validation helpers (SEC-06)
+export interface RequestSyncMessage {
+  type: "request_sync";
+  geohash: string;
+}
+
+export interface SyncResponseMessage {
+  type: "sync_response";
+  graffitis: any[];
+}
+
+export type DataChannelMessage = RequestSyncMessage | SyncResponseMessage;
+
+export function isValidSyncRequest(data: unknown): data is RequestSyncMessage {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as any).type === "request_sync" &&
+    typeof (data as any).geohash === "string" &&
+    (data as any).geohash.length > 0
+  );
+}
+
+export function isValidSyncResponse(data: unknown): data is SyncResponseMessage {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as any).type === "sync_response" &&
+    Array.isArray((data as any).graffitis)
+  );
+}
+
+export function isValidDataChannelMessage(data: unknown): data is DataChannelMessage {
+  return isValidSyncRequest(data) || isValidSyncResponse(data);
+}
+
 
 // UTF-8 string to Uint8Array helper ensuring local Uint8Array realm
 export const utf8ToBytes = (str: string): Uint8Array => {
