@@ -435,6 +435,30 @@ export default function App() {
     return list;
   }
 
+  // Helper to cleanly close and remove all WebRTC and DataChannel resources for a peer (SEC-04)
+  const cleanupPeer = (targetPeerId: string) => {
+    const pc = pcs.current[targetPeerId];
+    if (pc) {
+      delete pcs.current[targetPeerId];
+      try {
+        pc.close();
+      } catch (err) {
+        console.error(`Error closing peer connection for ${targetPeerId}:`, err);
+      }
+    }
+    const dc = dataChannels.current[targetPeerId];
+    if (dc) {
+      delete dataChannels.current[targetPeerId];
+      try {
+        dc.close();
+      } catch (err) {
+        console.error(`Error closing data channel for ${targetPeerId}:`, err);
+      }
+    }
+    delete pendingCandidates.current[targetPeerId];
+    setConnectedPeers(prev => prev.filter(p => p.peer_id !== targetPeerId));
+  };
+
   // 3. Connect to Tracker WebSocket
   const connectTracker = () => {
     if (ws.current) {
@@ -455,13 +479,13 @@ export default function App() {
 
     socket.onclose = () => {
       setWsStatus("disconnected");
-      setConnectedPeers([]);
       addLog("Disconnected from Django Tracker.", "danger");
       Object.keys(pcs.current).forEach(id => {
-        pcs.current[id].close();
-        delete pcs.current[id];
+        cleanupPeer(id);
       });
+      setConnectedPeers([]);
       dataChannels.current = {};
+      pendingCandidates.current = {};
     };
 
     socket.onerror = () => {
@@ -491,14 +515,7 @@ export default function App() {
           }
         } else if (data.type === "peer_left") {
           addLog(`Peer left our zone: ${data.peer_id.substring(0, 8)}...`, "warning");
-          setConnectedPeers(prev => prev.filter(p => p.peer_id !== data.peer_id));
-          if (pcs.current[data.peer_id]) {
-            pcs.current[data.peer_id].close();
-            delete pcs.current[data.peer_id];
-          }
-          if (dataChannels.current[data.peer_id]) {
-            delete dataChannels.current[data.peer_id];
-          }
+          cleanupPeer(data.peer_id);
         } else if (data.type === "signal") {
           handleIncomingSignal(data.sender, data.signal);
         } else if (data.type === "error") {
@@ -547,6 +564,22 @@ export default function App() {
 
     pcs.current[targetPeerId] = pc;
 
+    pc.onconnectionstatechange = () => {
+      const state = pc.connectionState;
+      if (state === "disconnected" || state === "failed" || state === "closed") {
+        addLog(`[P2P] Connection with ${targetPeerId.substring(0, 8)} changed to ${state}. Cleaning up.`, "warning");
+        cleanupPeer(targetPeerId);
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      const state = pc.iceConnectionState;
+      if (state === "disconnected" || state === "failed" || state === "closed") {
+        addLog(`[P2P] ICE connection with ${targetPeerId.substring(0, 8)} changed to ${state}. Cleaning up.`, "warning");
+        cleanupPeer(targetPeerId);
+      }
+    };
+
     pc.onicecandidate = (event) => {
       if (event.candidate && ws.current) {
         ws.current.send(JSON.stringify({
@@ -574,6 +607,7 @@ export default function App() {
       }
     } catch (err) {
       console.error("Error creating WebRTC offer:", err);
+      cleanupPeer(targetPeerId);
     }
   };
 
@@ -583,24 +617,35 @@ export default function App() {
     // Si recibimos una oferta (offer), significa que se inicia una nueva negociación.
     // Descartamos cualquier conexión vieja o rota con ese peer para empezar de cero.
     if (pc && signal.sdp && signal.sdp.type === "offer") {
-      try {
-        pc.close();
-      } catch (e) {}
+      cleanupPeer(sender);
       pc = null;
-      delete pcs.current[sender];
-      if (dataChannels.current[sender]) {
-        delete dataChannels.current[sender];
-      }
     }
 
     if (!pc) {
       addLog(`[P2P] Initializing connection response to: ${sender.substring(0, 8)}...`, "info");
-      pc = new RTCPeerConnection({
+      const newPc = new RTCPeerConnection({
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
       });
-      pcs.current[sender] = pc;
+      pc = newPc;
+      pcs.current[sender] = newPc;
 
-      pc.onicecandidate = (event) => {
+      newPc.onconnectionstatechange = () => {
+        const state = newPc.connectionState;
+        if (state === "disconnected" || state === "failed" || state === "closed") {
+          addLog(`[P2P] Connection with ${sender.substring(0, 8)} changed to ${state}. Cleaning up.`, "warning");
+          cleanupPeer(sender);
+        }
+      };
+
+      newPc.oniceconnectionstatechange = () => {
+        const state = newPc.iceConnectionState;
+        if (state === "disconnected" || state === "failed" || state === "closed") {
+          addLog(`[P2P] ICE connection with ${sender.substring(0, 8)} changed to ${state}. Cleaning up.`, "warning");
+          cleanupPeer(sender);
+        }
+      };
+
+      newPc.onicecandidate = (event) => {
         if (event.candidate && ws.current) {
           ws.current.send(JSON.stringify({
             type: "signal",
@@ -610,12 +655,14 @@ export default function App() {
         }
       };
 
-      pc.ondatachannel = (event) => {
+      newPc.ondatachannel = (event) => {
         addLog(`[P2P] Received remote sync data channel from ${sender.substring(0, 8)}`, "success");
         setupDataChannel(sender, event.channel);
         dataChannels.current[sender] = event.channel;
       };
     }
+
+    if (!pc) return;
 
     try {
       if (signal.sdp) {
@@ -654,6 +701,7 @@ export default function App() {
       }
     } catch (err) {
       console.error("Error setting signaling message:", err);
+      delete pendingCandidates.current[sender];
     }
   };
 
@@ -668,14 +716,32 @@ export default function App() {
 
     dc.onclose = () => {
       addLog(`[P2P] Channel closed with peer: ${peerId.substring(0, 8)}`, "warning");
+      cleanupPeer(peerId);
     };
 
     dc.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data);
+        let data: any;
+        try {
+          data = JSON.parse(event.data);
+        } catch {
+          console.warn(`[P2P] Malformed JSON received from peer ${peerId}`);
+          return;
+        }
+
+        if (!data || typeof data !== "object") {
+          console.warn(`[P2P] Discarding non-object message from peer ${peerId}`);
+          return;
+        }
+
         if (data.type === "request_sync") {
+          if (typeof data.geohash !== "string" || !data.geohash) {
+            console.warn(`[P2P] Discarding request_sync with invalid geohash from peer ${peerId}`);
+            return;
+          }
+          const targetPrefix = data.geohash.substring(0, 5);
           const filtered = localGraffitisRef.current.filter(g => 
-            g.location.geohash.startsWith(data.geohash.substring(0, 5))
+            g && g.location && typeof g.location.geohash === "string" && g.location.geohash.startsWith(targetPrefix)
           );
           dc.send(JSON.stringify({
             type: "sync_response",
@@ -683,15 +749,21 @@ export default function App() {
           }));
           addLog(`[P2P] Sent ${filtered.length} local graffitis to peer.`, "info");
         } else if (data.type === "sync_response") {
-          const incoming = data.graffitis || [];
+          if (!Array.isArray(data.graffitis)) {
+            console.warn(`[P2P] Discarding sync_response with non-array graffitis from peer ${peerId}`);
+            return;
+          }
+          const incoming = data.graffitis;
           let addedCount = 0;
           
           setRemoteGraffitis(prev => {
             const updated = [...prev];
             for (const item of incoming) {
-              if (verifyMessage(item)) {
-                const exists = updated.some(g => g.header.signature === item.header.signature) ||
-                               localGraffitisRef.current.some(g => g.header.signature === item.header.signature);
+              if (item && typeof item === "object" && verifyMessage(item)) {
+                const itemSig = item.header?.signature;
+                if (!itemSig) continue;
+                const exists = updated.some(g => g?.header?.signature === itemSig) ||
+                               localGraffitisRef.current.some(g => g?.header?.signature === itemSig);
                 if (!exists) {
                   updated.push(item);
                   addedCount++;
@@ -706,6 +778,8 @@ export default function App() {
           } else {
             addLog("[P2P] Sync finished (no new graffitis found).", "info");
           }
+        } else {
+          console.warn(`[P2P] Discarded unexpected message type '${data.type}' from peer ${peerId}`);
         }
       } catch (err) {
         console.error("Error processing P2P message:", err);
