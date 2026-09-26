@@ -1,15 +1,18 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Circle } from "react-leaflet";
+import { useState, useEffect, useRef, useMemo } from "react";
 import L from "leaflet";
 import nacl from "tweetnacl";
 import {
   Folder, RefreshCw, Upload, Download, MapPin,
-  Clock, Send, Layers, Moon, Sun, Globe, Satellite,
+  Clock, Send, Globe,
   Settings, Plus, X, Copy, Check, Shield, HardDrive, Terminal, MessageSquarePlus,
   Radio, Activity, Navigation
 } from "lucide-react";
 import "./App.css";
-import GlobeView, { type GlobeMarker } from "./GlobeView";
+import type { GlobeMarker } from "./GlobeView";
+import SpatialRadarPanel, { type MapStyle } from "./SpatialRadarPanel";
+import MessageStreamPanel from "./MessageStreamPanel";
+import TemporalHorizonPanel, { type EpochDimension } from "./TemporalHorizonPanel";
+import { generateSeedArchives } from "./seedData";
 
 // Fix Leaflet marker icons in Vite/React
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -32,75 +35,6 @@ import {
   signTrackerRegistration
 } from "./utils";
 
-
-
-function getDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371e3; // metres
-  const phi1 = lat1 * Math.PI / 180;
-  const phi2 = lat2 * Math.PI / 180;
-  const deltaPhi = (lat2 - lat1) * Math.PI / 180;
-  const deltaLambda = (lon2 - lon1) * Math.PI / 180;
-
-  const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
-    Math.cos(phi1) * Math.cos(phi2) *
-    Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return R * c; // in metres
-}
-
-function getAuthorAvatar(pubkey: string) {
-  if (!pubkey) return { bg: "#3b82f6", initials: "??", snippet: "anon" };
-  let hash = 0;
-  for (let i = 0; i < pubkey.length; i++) {
-    hash = pubkey.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue1 = Math.abs(hash % 360);
-  const hue2 = (hue1 + 50) % 360;
-  const initials = pubkey.substring(0, 2).toUpperCase();
-  const bg = `linear-gradient(135deg, hsl(${hue1}, 75%, 48%), hsl(${hue2}, 85%, 38%))`;
-  return { bg, initials, snippet: pubkey.substring(0, 8) };
-}
-
-// Map updater component to sync viewport with smooth flyTo
-function MapController({ center, target }: { center: [number, number]; target: [number, number] | null }) {
-  const map = useMap();
-  useEffect(() => {
-    if (target) {
-      map.flyTo(target, 15, { animate: true, duration: 1.5 });
-    } else {
-      map.setView(center, map.getZoom());
-    }
-  }, [center, target, map]);
-  return null;
-}
-
-// Map events handler to sync coords state on click
-function MapEventsTracker({
-  onClick,
-  onClearTarget,
-  onZoomOutToGlobe
-}: {
-  onClick: (lat: number, lon: number) => void;
-  onClearTarget: () => void;
-  onZoomOutToGlobe?: () => void;
-}) {
-  useMapEvents({
-    click: (e) => {
-      onClick(e.latlng.lat, e.latlng.lng);
-    },
-    movestart: () => {
-      onClearTarget();
-    },
-    zoomend: (e) => {
-      if (onZoomOutToGlobe && e.target.getZoom() <= 3) {
-        onZoomOutToGlobe();
-      }
-    }
-  });
-  return null;
-}
-
 interface LogEntry {
   text: string;
   type: "info" | "success" | "warning" | "danger";
@@ -109,56 +43,7 @@ interface LogEntry {
 
 interface PeerInfo {
   peer_id: string;
-  geohash: string;
 }
-
-type MapStyle = "clean_light" | "comic" | "streets_hd" | "satellite" | "dark_gray";
-
-interface MapStyleConfig {
-  id: MapStyle;
-  label: string;
-  url: string;
-  attribution: string;
-  maxZoom: number;
-}
-
-const MAP_STYLES: Record<MapStyle, MapStyleConfig> = {
-  clean_light: {
-    id: "clean_light",
-    label: "Minimalista Claro (Limpio)",
-    url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-    attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
-    maxZoom: 16,
-  },
-  comic: {
-    id: "comic",
-    label: "Estilo Cómic / Ilustración",
-    url: "https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, Tiles by <a href="https://www.hotosm.org/">HOT</a>',
-    maxZoom: 19,
-  },
-  streets_hd: {
-    id: "streets_hd",
-    label: "Calles HD (Esri)",
-    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
-    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS',
-    maxZoom: 19,
-  },
-  satellite: {
-    id: "satellite",
-    label: "Satélite HD (Esri)",
-    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS',
-    maxZoom: 19,
-  },
-  dark_gray: {
-    id: "dark_gray",
-    label: "Dark Canvas (Esri)",
-    url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-    attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
-    maxZoom: 16,
-  },
-};
 
 export default function App() {
   const [coords, setCoords] = useState<[number, number]>([-34.6037, -58.3816]);
@@ -180,6 +65,10 @@ export default function App() {
   const [writeTimeMode, setWriteTimeMode] = useState<"slider" | "now" | "custom">("slider");
   const [customWriteDate, setCustomWriteDate] = useState<string>("");
   const [viewAllDays, setViewAllDays] = useState<boolean>(false);
+  const [activeEpoch, setActiveEpoch] = useState<EpochDimension>("all");
+  const [selectedZoneFilter, setSelectedZoneFilter] = useState<string | null>(null);
+  const [selectedMessageSig, setSelectedMessageSig] = useState<string | null>(null);
+  const [activeMobileTab, setActiveMobileTab] = useState<"messages" | "spatial" | "temporal">("messages");
 
   const getDayRange = (offset: number) => {
     const d = new Date();
@@ -324,6 +213,17 @@ export default function App() {
       );
     } else {
       setGeohash(encodeGeohash(-34.6037, -58.3816));
+    }
+  }, []);
+
+  // Auto-initialize demo seed archives across Past, Present, and Future
+  useEffect(() => {
+    const seeded = localStorage.getItem("handshake_seeded");
+    if (!seeded) {
+      const seeds = generateSeedArchives();
+      setRemoteGraffitis(seeds);
+      localStorage.setItem("handshake_seeded", "true");
+      addLog("Corpus semilla de demostración inicializado (Pasado, Presente y Futuro).", "info");
     }
   }, []);
 
@@ -792,12 +692,6 @@ export default function App() {
     });
   };
 
-  const handleCardClick = (targetCoords: [number, number]) => {
-    setMapTarget(targetCoords);
-    setCoords(targetCoords);
-    addLog(`Centering map on selected graffiti: ${targetCoords[0].toFixed(5)}, ${targetCoords[1].toFixed(5)}`, "info");
-  };
-
   const saveAndSeedMessage = async (graf: any) => {
     if (!folderHandle) {
       setLocalGraffitis(prev => {
@@ -839,178 +733,140 @@ export default function App() {
     }
   };
 
-  // Combine lists of graffitis to show on map
+  // Combine lists of graffitis to show on map and stream
   const allGraffitis = useMemo(() => [...localGraffitis, ...remoteGraffitis], [localGraffitis, remoteGraffitis]);
+
+  // Filter by time AND spatial-temporal visibility mechanics (Handshake triad coordination)
+  const filteredGraffitis = useMemo(() => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const startTodaySec = Math.floor(startOfToday.getTime() / 1000);
+
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+    const endTodaySec = Math.floor(endOfToday.getTime() / 1000);
+
+    return allGraffitis.filter(g => {
+      const ts = g.header?.timestamp || 0;
+
+      // 1. Epoch Dimension Filter
+      if (activeEpoch === "past" && ts >= startTodaySec) return false;
+      if (activeEpoch === "present" && (ts < startTodaySec || ts > endTodaySec)) return false;
+      if (activeEpoch === "future" && ts <= endTodaySec) return false;
+
+      // 2. Day Range Filter (if viewAllDays is false and activeEpoch === "all")
+      if (!viewAllDays && activeEpoch === "all") {
+        const dayRange = getDayRange(dayOffset);
+        if (ts < dayRange.start || ts > dayRange.end) {
+          return false;
+        }
+      }
+
+      // 3. Zone Geohash Filter
+      if (selectedZoneFilter) {
+        if (!g.location?.geohash?.startsWith(selectedZoneFilter)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [allGraffitis, activeEpoch, viewAllDays, dayOffset, selectedZoneFilter]);
 
   // Map markers for the 3D Globe visualization (Radio Garden / Radio Atlas)
   const globeMarkers: GlobeMarker[] = useMemo(() => {
     const list: GlobeMarker[] = [];
-    allGraffitis.forEach((g, idx) => {
+    filteredGraffitis.forEach((g, idx) => {
       try {
         const gCoords = decodeGeohash(g.location.geohash);
-        const isLocal = localGraffitis.some(lg => lg.header.signature === g.header.signature);
-        const isTrusted = trustedAuthors.includes(g.header.author_pk);
+        const isLocal = localGraffitis.some(lg => lg.header?.signature === g.header?.signature);
+        const isTrusted = trustedAuthors.includes(g.header?.author_pk);
         list.push({
-          id: g.header.signature || `g-${idx}`,
+          id: g.header?.signature || `g-${idx}`,
           lat: gCoords.lat,
           lon: gCoords.lon,
           geohash: g.location.geohash,
           text: g.content?.text || "",
-          author: g.header.author_pk || "Unknown",
-          timestamp: g.header.timestamp || 0,
+          author: g.header?.author_pk || "Unknown",
+          timestamp: g.header?.timestamp || 0,
           isLocal,
           isTrusted,
           raw: g
         });
-      } catch (e) {
+      } catch {
         // Ignore invalid geohash
       }
     });
     return list;
-  }, [allGraffitis, localGraffitis, trustedAuthors]);
-  
-  // Filter by time AND spatial-temporal visibility mechanics (Handshake multiplier)
-  const filteredGraffitis = allGraffitis.filter(g => {
-    // 1. Filtro temporal (a menos que se active "Ver todos los días")
-    if (!viewAllDays) {
-      const dayRange = getDayRange(dayOffset);
-      if (g.header.timestamp < dayRange.start || g.header.timestamp > dayRange.end) {
-        return false;
-      }
-    }
-    
-    // 2. Filtro espacial y visibilidad (Tus propios graffitis se muestran siempre en su momento temporal)
-    const isLocallyOwned = g.header.author_pk === publicKey;
-    const isLocallyStored = localGraffitis.some(lg => lg.header.signature === g.header.signature);
-    if (isLocallyOwned || isLocallyStored) return true;
+  }, [filteredGraffitis, localGraffitis, trustedAuthors]);
 
+  const handleSelectMessage = (graf: any) => {
+    setSelectedMessageSig(graf.header?.signature || null);
     try {
-      const gCoords = decodeGeohash(g.location.geohash);
-      const distance = getDistance(coords[0], coords[1], gCoords.lat, gCoords.lon);
-      const isTrusted = trustedAuthors.includes(g.header.author_pk);
-      const visibilityRadius = isTrusted ? 1000 : 200; // 1km if trusted (Handshake Multiplier), 200m if not
-      return distance <= visibilityRadius;
-    } catch (e) {
-      return false;
+      const gCoords = decodeGeohash(graf.location?.geohash);
+      setCoords([gCoords.lat, gCoords.lon]);
+      setMapTarget([gCoords.lat, gCoords.lon]);
+      addLog(`Radar enfocado en coordenadas: ${gCoords.lat.toFixed(4)}, ${gCoords.lon.toFixed(4)}`, "info");
+    } catch {
+      // ignore
     }
-  });
-
-  // Helper to build recursive thread trees from flat messages list
-  const buildThreadTrees = (graffitis: any[]) => {
-    const map: { [sig: string]: any & { replies: any[] } } = {};
-    graffitis.forEach(g => {
-      if (g.header && g.header.signature) {
-        map[g.header.signature] = { ...g, replies: [] };
-      }
-    });
-    const roots: any[] = [];
-    graffitis.forEach(g => {
-      if (!g.header || !g.header.signature) return;
-      const mapped = map[g.header.signature];
-      const parentSig = g.header.parent_signature;
-      if (parentSig && map[parentSig]) {
-        map[parentSig].replies.push(mapped);
-      } else {
-        roots.push(mapped);
-      }
-    });
-    // Sort roots by timestamp
-    roots.sort((a, b) => a.header.timestamp - b.header.timestamp);
-    const sortReplies = (node: any) => {
-      node.replies.sort((a: any, b: any) => a.header.timestamp - b.header.timestamp);
-      node.replies.forEach(sortReplies);
-    };
-    roots.forEach(sortReplies);
-    return roots;
   };
 
-  // Recursive component to render threaded graffiti cards
-  const ThreadedCard = ({ node, depth = 0 }: { node: any; depth: number }) => {
-    const isLocal = localGraffitis.some(g => g.header.signature === node.header.signature);
-    const isTrusted = trustedAuthors.includes(node.header.author_pk);
-    const gCoords = decodeGeohash(node.location.geohash);
-    const dist = getDistance(coords[0], coords[1], gCoords.lat, gCoords.lon);
-    const avatar = getAuthorAvatar(node.header.author_pk);
+  const handleSelectLocation = (lat: number, lon: number, markerData?: any) => {
+    setCoords([lat, lon]);
+    setMapTarget([lat, lon]);
+    if (markerData && markerData.raw) {
+      setSelectedMessageSig(markerData.raw.header?.signature || null);
+    }
+  };
 
-    return (
-      <div style={{ 
-        marginLeft: depth > 0 ? "16px" : "0", 
-        borderLeft: depth > 0 ? "2px solid rgba(0, 243, 255, 0.25)" : "none", 
-        paddingLeft: depth > 0 ? "12px" : "0",
-        marginTop: "8px"
-      }}>
-        <div 
-          className={`timeline-card ${isTrusted ? "trusted" : isLocal ? "local" : "remote"}`}
-          onClick={() => handleCardClick([gCoords.lat, gCoords.lon])}
-          style={{ marginBottom: "4px" }}
-        >
-          <div className="card-header-top">
-            <div className="card-author-identity">
-              <div className="avatar-identicon" style={{ background: avatar.bg }}>
-                {avatar.initials}
-              </div>
-              <div className="avatar-hash-chip">
-                <span className="card-author-hash">#{avatar.snippet}</span>
-                <span className={`badge ${isTrusted ? "badge-success" : isLocal ? "badge-info" : "badge-warning"}`} style={{ fontSize: "9px", padding: "1px 5px" }}>
-                  {isTrusted ? "★ Confiable" : isLocal ? "● Local" : "⚡ P2P"}
-                </span>
-              </div>
-            </div>
+  const handleToggleZoneFilter = (zone: string) => {
+    if (selectedZoneFilter === zone) {
+      setSelectedZoneFilter(null);
+      addLog("Filtro de celda espacial desactivado.", "info");
+    } else {
+      setSelectedZoneFilter(zone);
+      addLog(`Filtro de celda espacial activo: ${zone}`, "info");
+    }
+  };
 
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <span className={`card-distance-chip ${isTrusted ? "trusted" : isLocal ? "local" : "remote"}`}>
-                <MapPin size={11} />
-                {dist < 1000 ? `${dist.toFixed(0)}m` : `${(dist / 1000).toFixed(1)}km`}
-              </span>
-              <span className="card-time" style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                {new Date(node.header.timestamp * 1000).toLocaleTimeString([], {hour: "2-digit", minute:"2-digit"})}
-              </span>
-            </div>
-          </div>
+  const handleClearZoneFilter = () => {
+    setSelectedZoneFilter(null);
+    addLog("Filtro de celda espacial desactivado.", "info");
+  };
 
-          <div className="card-content" style={{ fontSize: "13px", lineHeight: "1.45", color: "var(--text-primary)" }}>
-            "{node.content.text}"
-          </div>
+  const handleSelectEpoch = (epoch: EpochDimension) => {
+    setActiveEpoch(epoch);
+    if (epoch !== "all") {
+      setViewAllDays(false);
+    }
+    addLog(`Época temporal seleccionada: ${epoch.toUpperCase()}`, "info");
+  };
 
-          <div className="card-footer" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px" }}>
-            <span className="card-geohash" style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-              Geohash: <code style={{ color: "var(--neon-cyan)" }}>{node.location.geohash.substring(0, 7)}</code>
-            </span>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              {node.header.author_pk !== publicKey && (
-                <button
-                  className="btn btn-secondary"
-                  style={{ padding: "2px 8px", fontSize: "10px", height: "22px", display: "inline-flex", alignItems: "center", gap: "3px" }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setReplyingTo(node);
-                    setComposerLocationMode("parent");
-                    setIsComposerOpen(true);
-                  }}
-                >
-                  💬 Responder
-                </button>
-              )}
-              {!isLocal && (
-                <button
-                  className="btn btn-primary"
-                  style={{ padding: "2px 8px", fontSize: "10px", height: "22px", display: "inline-flex" }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    saveAndSeedMessage(node);
-                  }}
-                >
-                  📥 Seedear
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-        {node.replies.map((reply: any, idx: number) => (
-          <ThreadedCard key={`reply-${node.header.signature}-${idx}`} node={reply} depth={depth + 1} />
-        ))}
-      </div>
-    );
+  const handleCenterUserLocation = () => {
+    if (gpsCoords) {
+      setCoords(gpsCoords);
+      setMapTarget(gpsCoords);
+      addLog(`Radar centrado en GPS: ${gpsCoords[0].toFixed(4)}, ${gpsCoords[1].toFixed(4)}`, "info");
+    } else {
+      setCoords([-34.6037, -58.3816]);
+      setMapTarget([-34.6037, -58.3816]);
+      addLog("Radar centrado en coordenadas por defecto (Buenos Aires)", "info");
+    }
+  };
+
+  const handleLoadSeedArchives = () => {
+    const seeds = generateSeedArchives();
+    setRemoteGraffitis(prev => {
+      const combined = [...prev];
+      seeds.forEach(s => {
+        if (!combined.some(g => g.header?.signature === s.header?.signature)) {
+          combined.push(s);
+        }
+      });
+      return combined;
+    });
+    addLog("Semillas del protocolo cargadas con éxito en las 3 dimensiones.", "success");
   };
 
   return (
@@ -1041,26 +897,6 @@ export default function App() {
           <div className="hud-pill" title="Estado de sincronización Strata-Sync">
             <Activity size={12} style={{ color: wsStatus === "connected" ? "var(--neon-emerald)" : "var(--neon-amber)" }} />
             <span>Strata-Sync: <code style={{ color: wsStatus === "connected" ? "var(--neon-emerald)" : "var(--neon-amber)" }}>{wsStatus === "connected" ? "Live" : "Standby"}</code></span>
-          </div>
-
-          {/* View Mode Switcher */}
-          <div className="view-mode-toggle">
-            <button
-              className={`view-mode-btn ${viewMode === "globe" ? "active" : ""}`}
-              onClick={() => setViewMode("globe")}
-              title="Vista Global 3D (Radio Garden / Radio Atlas)"
-            >
-              <Globe size={13} />
-              <span>Globo 3D</span>
-            </button>
-            <button
-              className={`view-mode-btn ${viewMode === "map" ? "active" : ""}`}
-              onClick={() => setViewMode("map")}
-              title="Vista de Mapa 2D Local"
-            >
-              <Layers size={13} />
-              <span>Mapa 2D</span>
-            </button>
           </div>
         </div>
 
@@ -1108,326 +944,126 @@ export default function App() {
         </div>
       </header>
 
-      <div className="app-layout">
-        {/* Column 1: Timeline / Wall Feed */}
-        <div className="timeline">
-          <div className="timeline-header">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3 className="timeline-title">
-                <Clock size={18} /> Graffitis en la zona
-              </h3>
-              <span className="badge badge-info" style={{ fontSize: "10px" }}>
-                {filteredGraffitis.length} mensajes
-              </span>
-            </div>
-            <p className="timeline-desc">
-              Huellas descubiertas en tu rango de visibilidad. Haz clic en el mapa para explorar otras coordenadas.
-            </p>
-          </div>
+      {/* Mobile Navigation Tabs (for screens < 1024px) */}
+      <nav className="mobile-triad-tabs" aria-label="Navegación espacial-temporal">
+        <button
+          className={`mobile-tab-btn ${activeMobileTab === "messages" ? "active" : ""}`}
+          onClick={() => setActiveMobileTab("messages")}
+        >
+          <MessageSquarePlus size={15} />
+          <span>Mensajes (50%)</span>
+          <span className="mobile-tab-count">{filteredGraffitis.length}</span>
+        </button>
+        <button
+          className={`mobile-tab-btn ${activeMobileTab === "spatial" ? "active" : ""}`}
+          onClick={() => setActiveMobileTab("spatial")}
+        >
+          <Radio size={15} />
+          <span>Radar (25%)</span>
+        </button>
+        <button
+          className={`mobile-tab-btn ${activeMobileTab === "temporal" ? "active" : ""}`}
+          onClick={() => setActiveMobileTab("temporal")}
+        >
+          <Clock size={15} />
+          <span>Tiempo (25%)</span>
+        </button>
+      </nav>
 
-          <div className="timeline-list">
-            {filteredGraffitis.length === 0 ? (
-              <div className="timeline-empty">
-                <MapPin size={32} style={{ color: "var(--text-muted)", marginBottom: "8px" }} />
-                <p style={{ fontWeight: 600 }}>Zona sin graffitis en este día</p>
-                <span style={{ fontSize: "12px", color: "var(--text-muted)", textAlign: "center", lineHeight: "1.5" }}>
-                  Usa el botón <strong>"Pintar Graffiti"</strong> para dejar la primera huella en estas coordenadas y momento temporal.
-                </span>
-              </div>
-            ) : (
-              buildThreadTrees(filteredGraffitis).map((node, idx) => (
-                <ThreadedCard key={`root-${idx}`} node={node} depth={0} />
-              ))
-            )}
-          </div>
+      {/* The Space-Time Triad Layout Cockpit (50% Messages, 25% Space, 25% Time) */}
+      <div className="triad-cockpit">
+        {/* Panel 1: Spatial Radar Panel (25%) */}
+        <div className={`triad-column spatial-column ${activeMobileTab === "spatial" ? "mobile-active" : ""}`}>
+          <SpatialRadarPanel
+            coords={coords}
+            gpsCoords={gpsCoords}
+            geohash={geohash}
+            selectedZoneFilter={selectedZoneFilter}
+            viewMode={viewMode}
+            mapStyle={mapStyle}
+            showStyleMenu={showStyleMenu}
+            mapTarget={mapTarget}
+            globeMarkers={globeMarkers}
+            filteredGraffitis={filteredGraffitis}
+            localGraffitis={localGraffitis}
+            trustedAuthors={trustedAuthors}
+            publicKey={publicKey}
+            onSetViewMode={setViewMode}
+            onSelectLocation={handleSelectLocation}
+            onClearMapTarget={() => setMapTarget(null)}
+            onToggleStyleMenu={() => setShowStyleMenu(!showStyleMenu)}
+            onSelectMapStyle={(style) => { setMapStyle(style); setShowStyleMenu(false); }}
+            onToggleZoneFilter={handleToggleZoneFilter}
+            onClearZoneFilter={handleClearZoneFilter}
+            onCenterUserLocation={handleCenterUserLocation}
+            onOpenComposerHere={() => {
+              setReplyingTo(null);
+              setComposerLocationMode("picked");
+              setIsComposerOpen(true);
+            }}
+            onToggleTrust={toggleTrust}
+            onSaveAndSeed={saveAndSeedMessage}
+            onReplyTo={(graf) => {
+              setReplyingTo(graf);
+              setComposerLocationMode("parent");
+              setIsComposerOpen(true);
+            }}
+          />
         </div>
 
-        {/* Column 2: Interactive Map & 3D Globe Viewport */}
-        <div className="map-container" style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}>
-          {viewMode === "globe" ? (
-            <GlobeView
-              markers={globeMarkers}
-              userCoords={coords}
-              activeCoords={coords}
-              onSelectLocation={(lat, lon) => {
-                setCoords([lat, lon]);
-                setMapTarget([lat, lon]);
-                setViewMode("map");
-              }}
-              onSwitchTo2D={() => {
-                setMapTarget(coords);
-                setViewMode("map");
-              }}
-            />
-          ) : (
-            <>
-              <button
-                className="btn btn-secondary"
-                style={{
-                  position: "absolute",
-                  top: "20px",
-                  left: "20px",
-                  zIndex: 999,
-                  background: "rgba(13, 17, 27, 0.88)",
-                  backdropFilter: "blur(16px)",
-                  border: "1px solid var(--border-glow)",
-                  boxShadow: "0 4px 20px rgba(0,0,0,0.5), 0 0 15px var(--neon-cyan-glow)",
-                  color: "#ffffff",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px"
-                }}
-                onClick={() => setViewMode("globe")}
-                title="Volver a la vista 3D del Globo terráqueo"
-              >
-                <Globe size={14} style={{ color: "var(--neon-cyan)" }} />
-                <span>🌐 Vista Globo 3D</span>
-              </button>
+        {/* Panel 2: Sovereign Message Stream & Threads (50% Hero) */}
+        <div className={`triad-column message-column ${activeMobileTab === "messages" ? "mobile-active" : ""}`}>
+          <MessageStreamPanel
+            graffitis={filteredGraffitis}
+            allGraffitisCount={allGraffitis.length}
+            localGraffitis={localGraffitis}
+            trustedAuthors={trustedAuthors}
+            publicKey={publicKey}
+            coords={coords}
+            selectedZoneFilter={selectedZoneFilter}
+            activeEpoch={activeEpoch}
+            dayOffset={dayOffset}
+            viewAllDays={viewAllDays}
+            selectedMessageSig={selectedMessageSig}
+            onSelectMessage={handleSelectMessage}
+            onReplyTo={(graf) => {
+              setReplyingTo(graf);
+              setComposerLocationMode("parent");
+              setIsComposerOpen(true);
+            }}
+            onToggleTrust={toggleTrust}
+            onSaveAndSeed={saveAndSeedMessage}
+            onClearZoneFilter={handleClearZoneFilter}
+            onClearEpochFilter={() => setActiveEpoch("all")}
+            onOpenComposer={() => {
+              setReplyingTo(null);
+              setComposerLocationMode("picked");
+              setIsComposerOpen(true);
+            }}
+            onLoadSeedArchives={handleLoadSeedArchives}
+          />
+        </div>
 
-              {/* Floating Map Style Selector */}
-          <div className="map-style-selector">
-            <button 
-              className="map-style-btn" 
-              onClick={() => setShowStyleMenu(!showStyleMenu)}
-              title="Cambiar estilo visual del mapa"
-            >
-              <Layers size={18} />
-              <span>{MAP_STYLES[mapStyle].label}</span>
-            </button>
-            
-            {showStyleMenu && (
-              <div className="map-style-dropdown">
-                <button 
-                  className={`map-style-option ${mapStyle === 'clean_light' ? 'active' : ''}`}
-                  onClick={() => { setMapStyle('clean_light'); setShowStyleMenu(false); }}
-                >
-                  <Sun size={14} />
-                  <span>Minimalista Claro (Limpio)</span>
-                </button>
-                <button 
-                  className={`map-style-option ${mapStyle === 'comic' ? 'active' : ''}`}
-                  onClick={() => { setMapStyle('comic'); setShowStyleMenu(false); }}
-                >
-                  <Globe size={14} />
-                  <span>Estilo Cómic / Ilustración</span>
-                </button>
-                <button 
-                  className={`map-style-option ${mapStyle === 'streets_hd' ? 'active' : ''}`}
-                  onClick={() => { setMapStyle('streets_hd'); setShowStyleMenu(false); }}
-                >
-                  <Globe size={14} />
-                  <span>Calles HD (Esri)</span>
-                </button>
-                <button 
-                  className={`map-style-option ${mapStyle === 'satellite' ? 'active' : ''}`}
-                  onClick={() => { setMapStyle('satellite'); setShowStyleMenu(false); }}
-                >
-                  <Satellite size={14} />
-                  <span>Satélite HD (Esri)</span>
-                </button>
-                <button 
-                  className={`map-style-option ${mapStyle === 'dark_gray' ? 'active' : ''}`}
-                  onClick={() => { setMapStyle('dark_gray'); setShowStyleMenu(false); }}
-                >
-                  <Moon size={14} />
-                  <span>Dark Canvas (Esri)</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          <MapContainer 
-            center={coords} 
-            zoom={14} 
-            className={`leaflet-map map-style-${mapStyle}`}
-            zoomControl={false}
-          >
-            <TileLayer
-              key={mapStyle}
-              attribution={MAP_STYLES[mapStyle].attribution}
-              url={MAP_STYLES[mapStyle].url}
-              maxZoom={MAP_STYLES[mapStyle].maxZoom}
-            />
-
-            <MapController center={coords} target={mapTarget} />
-            <MapEventsTracker 
-              onClick={(lat, lon) => {
-                setCoords([lat, lon]);
-              }} 
-              onClearTarget={() => setMapTarget(null)}
-              onZoomOutToGlobe={() => setViewMode("globe")}
-            />
-
-            {/* Visibility Rings */}
-            <Circle 
-              center={coords} 
-              radius={200} 
-              pathOptions={{ color: 'var(--accent)', fillColor: 'var(--accent)', fillOpacity: 0.08, dashArray: '4, 4' }} 
-            />
-            <Circle 
-              center={coords} 
-              radius={1000} 
-              pathOptions={{ color: 'var(--accent-hover)', fillColor: 'var(--accent-hover)', fillOpacity: 0.03, dashArray: '8, 8' }} 
-            />
-
-            {/* User Node Marker */}
-            <Marker 
-              position={coords}
-              icon={L.divIcon({
-                className: "custom-marker",
-                html: `
-                  <div class="user-beacon">
-                    <div class="user-beacon-ping"></div>
-                    <div class="user-beacon-core"></div>
-                  </div>
-                `,
-                iconSize: [28, 28],
-                iconAnchor: [14, 14]
-              })}
-            >
-              <Popup className="handshake-popup">
-                <div className="popup-card">
-                  <div className="popup-badge you">Tu Posición (Seeder)</div>
-                  <div className="popup-meta">
-                    <div><strong>Geohash:</strong> <code>{geohash}</code></div>
-                    <div><strong>ID:</strong> <code>{publicKey.substring(0, 10)}...</code></div>
-                  </div>
-                  <button 
-                    className="btn btn-primary popup-btn" 
-                    style={{ marginTop: "6px" }}
-                    onClick={() => {
-                      setReplyingTo(null);
-                      setIsComposerOpen(true);
-                    }}
-                  >
-                    ✍️ Pintar aquí
-                  </button>
-                </div>
-              </Popup>
-            </Marker>
-
-            {/* Graffiti Markers */}
-            {filteredGraffitis.map((graf, idx) => {
-              try {
-                const isLocal = localGraffitis.some(g => g.header.signature === graf.header.signature);
-                const grafCoords = decodeGeohash(graf.location.geohash);
-                const isTrusted = trustedAuthors.includes(graf.header.author_pk);
-                const typeClass = isTrusted ? 'trusted' : isLocal ? 'local' : 'remote';
-                
-                return (
-                  <Marker 
-                    key={`graf-${idx}`} 
-                    position={[grafCoords.lat, grafCoords.lon]}
-                    icon={L.divIcon({
-                      className: "custom-marker",
-                      html: `
-                        <div class="graffiti-pin ${typeClass}">
-                          <div class="graffiti-pin-glow"></div>
-                          <div class="graffiti-pin-dot"></div>
-                        </div>
-                      `,
-                      iconSize: [26, 26],
-                      iconAnchor: [13, 13]
-                    })}
-                  >
-                    <Popup className="handshake-popup">
-                      <div className="popup-card">
-                        <div className="popup-header">
-                          <span className={`badge ${isTrusted ? "badge-success" : isLocal ? "badge-success" : "badge-warning"}`}>
-                            {isTrusted ? "★ Contacto Confiable" : isLocal ? "● Seeding Local" : "⚡ P2P Sincronizado"}
-                          </span>
-                        </div>
-                        <p className="popup-text">"{graf.content.text}"</p>
-                        <div className="popup-details">
-                          <span><strong>Autor:</strong> <code>{graf.header.author_pk.substring(0, 8)}...</code></span>
-                          <span><strong>Fecha:</strong> {new Date(graf.header.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({new Date(graf.header.timestamp * 1000).toLocaleDateString()})</span>
-                          <span><strong>Geohash:</strong> <code>{graf.location.geohash}</code></span>
-                        </div>
-                        <div className="popup-actions">
-                          {graf.header.author_pk !== publicKey && (
-                            <>
-                              <button 
-                                className="btn btn-secondary popup-btn" 
-                                onClick={() => toggleTrust(graf.header.author_pk)}
-                              >
-                                🤝 {isTrusted ? "Desconfiar" : "Handshake"}
-                              </button>
-                              <button 
-                                className="btn btn-secondary popup-btn" 
-                                onClick={() => {
-                                  setReplyingTo(graf);
-                                  setIsComposerOpen(true);
-                                }}
-                              >
-                                💬 Responder
-                              </button>
-                            </>
-                          )}
-                          {!isLocal && (
-                            <button 
-                              className="btn btn-primary popup-btn" 
-                              onClick={() => saveAndSeedMessage(graf)}
-                            >
-                              📥 Guardar
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </Popup>
-                  </Marker>
-                );
-              } catch (e) {
-                return null;
-              }
-            })}
-          </MapContainer>
-            </>
-          )}
-
-          {/* Time Slider Overlay */}
-          <div className="map-overlay">
-            <div className="overlay-panel time-slider-container">
-              <div className="slider-header">
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <Clock size={14} style={{ color: "var(--accent)" }} />
-                  <span>Explorador Temporal:</span>
-                  <span style={{ fontWeight: 700, color: "var(--accent)" }}>{getSelectedDayText(dayOffset)}</span>
-                </div>
-                <div style={{ display: "flex", gap: "6px" }}>
-                  <button 
-                    className={`btn btn-secondary ${viewAllDays ? 'btn-active-toggle' : ''}`}
-                    style={{ padding: "2px 8px", fontSize: "10px", height: "24px" }}
-                    onClick={() => setViewAllDays(!viewAllDays)}
-                    title="Alternar entre ver solo el día activo o ver todos los graffitis sin importar el tiempo"
-                  >
-                    {viewAllDays ? "👁️ Mostrando Todo" : "🗓️ Filtrar por Día"}
-                  </button>
-                </div>
-              </div>
-              <input 
-                type="range" 
-                min="-14"
-                max="14"
-                step="1"
-                value={dayOffset}
-                onChange={(e) => {
-                  setDayOffset(Number(e.target.value));
-                  if (viewAllDays) setViewAllDays(false);
-                }}
-                className="slider-input"
-              />
-              <div className="slider-ticks">
-                <button className={`tick-btn ${dayOffset === -7 ? 'active' : ''}`} onClick={() => { setDayOffset(-7); setViewAllDays(false); }}>-7d</button>
-                <button className={`tick-btn ${dayOffset === -1 ? 'active' : ''}`} onClick={() => { setDayOffset(-1); setViewAllDays(false); }}>Ayer</button>
-                <button className={`tick-btn ${dayOffset === 0 ? 'active' : ''}`} onClick={() => { setDayOffset(0); setViewAllDays(false); }}>Hoy</button>
-                <button className={`tick-btn ${dayOffset === 1 ? 'active' : ''}`} onClick={() => { setDayOffset(1); setViewAllDays(false); }}>Mañana</button>
-                <button className={`tick-btn ${dayOffset === 7 ? 'active' : ''}`} onClick={() => { setDayOffset(7); setViewAllDays(false); }}>+7d</button>
-                <button className={`tick-btn ${dayOffset === 14 ? 'active' : ''}`} onClick={() => { setDayOffset(14); setViewAllDays(false); }}>+14d (Futuro)</button>
-              </div>
-            </div>
-          </div>
+        {/* Panel 3: Temporal Horizon Panel (25%) */}
+        <div className={`triad-column temporal-column ${activeMobileTab === "temporal" ? "mobile-active" : ""}`}>
+          <TemporalHorizonPanel
+            activeEpoch={activeEpoch}
+            dayOffset={dayOffset}
+            viewAllDays={viewAllDays}
+            allGraffitis={allGraffitis}
+            onSelectEpoch={handleSelectEpoch}
+            onSetDayOffset={(offset) => {
+              setDayOffset(offset);
+              if (viewAllDays) setViewAllDays(false);
+            }}
+            onToggleViewAllDays={() => setViewAllDays(!viewAllDays)}
+            onLoadSeedArchives={handleLoadSeedArchives}
+            onOpenComposerWithOffset={(offset) => {
+              setDayOffset(offset);
+              setReplyingTo(null);
+              setIsComposerOpen(true);
+            }}
+          />
         </div>
       </div>
 
