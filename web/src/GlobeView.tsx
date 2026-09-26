@@ -90,6 +90,7 @@ export default function GlobeView({
   const markersGroupRef = useRef<THREE.Group | null>(null);
   const animatedRingsRef = useRef<AnimatedRing[]>([]);
   const interactiveObjectsRef = useRef<THREE.Object3D[]>([]);
+  const targetRotationRef = useRef<{ x: number; y: number } | null>(null);
 
   // Keep latest callbacks in ref to prevent re-attaching event listeners
   const callbacksRef = useRef({ onSelectLocation, onSwitchTo2D });
@@ -242,6 +243,7 @@ export default function GlobeView({
     const onMouseDown = (e: MouseEvent) => {
       isDragging = true;
       autoRotate = false;
+      targetRotationRef.current = null;
       dragDistance = 0;
       previousMousePosition = { x: e.clientX, y: e.clientY };
     };
@@ -389,15 +391,26 @@ export default function GlobeView({
       clock.getDelta();
       const time = clock.getElapsedTime();
 
-      // Damping & Auto-rotation
+      // Damping, Active Coords Alignment & Auto-rotation
       if (!isDragging) {
-        velX *= 0.95;
-        velY *= 0.95;
-        globeGroup.rotation.y += velX;
-        globeGroup.rotation.x += velY;
+        if (targetRotationRef.current) {
+          const diffY = targetRotationRef.current.y - globeGroup.rotation.y;
+          const diffX = targetRotationRef.current.x - globeGroup.rotation.x;
+          if (Math.abs(diffY) > 0.001 || Math.abs(diffX) > 0.001) {
+            globeGroup.rotation.y += diffY * 0.08;
+            globeGroup.rotation.x += diffX * 0.08;
+          } else {
+            targetRotationRef.current = null;
+          }
+        } else {
+          velX *= 0.95;
+          velY *= 0.95;
+          globeGroup.rotation.y += velX;
+          globeGroup.rotation.x += velY;
 
-        if (autoRotate && Math.abs(velX) < 0.0005) {
-          globeGroup.rotation.y += 0.0012; // Slow hypnotic spin
+          if (autoRotate && Math.abs(velX) < 0.0005) {
+            globeGroup.rotation.y += 0.0012; // Slow hypnotic spin
+          }
         }
       }
 
@@ -536,6 +549,15 @@ export default function GlobeView({
       spawnNode(m.lat, m.lon, color, m, false);
     });
   }, [markers, userCoords]);
+
+  // --- 3. Active Coordinates Re-centering Effect ---
+  useEffect(() => {
+    if (!globeGroupRef.current) return;
+    const target = latLonToVector3(activeCoords[0], activeCoords[1], earthRadius);
+    const rotY = -Math.atan2(target.x, target.z);
+    const rotX = Math.asin(target.y / earthRadius);
+    targetRotationRef.current = { x: rotX, y: rotY };
+  }, [activeCoords]);
 
   // Fallback for headless environments or no WebGL
   if (!webglSupported || !hasWebGL) {
