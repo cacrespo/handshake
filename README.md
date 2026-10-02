@@ -3,15 +3,16 @@
 ## The Vision
 **Handshake** is a decentralized, space-time anchored communication network where the central focus is **the message, not user profiles or accounts**. 
 
-Rather than managing abstract digital identities or infinite algorithm-driven feeds, Handshake proposes a landscape of **digital graffitis anchored in exact coordinates and time**. Location is never passive surveillance or tracking imposed on the user; it is an **expressive, voluntary, and strictly necessary act**—in Handshake, no message can exist without its space-time anchor. Physical encounter validates human relationships, but the virtual network's core unit of value and memory is the space-time trace itself—seeded, preserved, and explored collectively through peer-to-peer swarms.
+Rather than managing abstract digital identities or infinite algorithm-driven feeds, Handshake proposes a landscape of **digital graffitis anchored in exact coordinates and time**. Location is never passive surveillance or tracking imposed on the user; it is an **expressive, voluntary, and strictly necessary act**—in Handshake, no message can exist without its space-time anchor. The virtual network's core unit of value and memory is the space-time trace itself—seeded, preserved, and explored collectively through peer-to-peer swarms. While physical proximity or in-person exchanges exist as optional local capabilities, messages live, circulate, and retain value on their own merit across space and time.
 
 ## The "Handshake" Mechanic
-The core organizing principle of trust and custody is the **Handshake**—a cryptographic validation of trust and presence.
+The core organizing principle of custody and preservation is the **Handshake**—an intentional act of collective seeding and cryptographic trust.
 
-Everyone can explore the messages left in the world, but **prominence, priority seeding, and storage custody** are governed by Handshakes:
-1. **Local by Default:** A new graffiti is strictly local, discovered when exploring its exact space-time coordinates.
-2. **Prominence & Storage Immunity:** Messages left by trusted contacts (or manually pinned) receive visual priority and are granted immunity against automatic local storage metabolism purges.
-3. **Your Trust Network:** Messages created by your trusted contacts (exchanged via physical QR Handshake) are prioritized during P2P seeding and highlighted across your viewport.
+Everyone can explore the messages left in the world, but **prominence, priority seeding, and storage custody** are governed by sovereign choices:
+1. **Local by Default:** A new graffiti is anchored in its exact space-time coordinates, discovered when exploring those coordinates.
+2. **Collective Custody (Seed / Unseed):** Users act as custodians of spatial memory, actively deciding which graffitis to preserve and replicate for nearby swarms.
+3. **Prominence & Storage Immunity:** Messages explicitly pinned by the user (or authored by trusted contacts in their local contact book) receive visual priority and are granted immunity against automatic local storage metabolism purges.
+4. **Optional In-Person Pairing:** Direct local contact exchange (via QR code or BLE proximity) is available as an optional convenience to build personal contact books, without acting as a barrier to network exploration.
 
 ## Architecture: The Web MVP
 

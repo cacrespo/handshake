@@ -14,7 +14,7 @@ Most traditional networks are centered around abstract digital identity: profile
 
 The network does not manage or validate virtual profiles. Instead, the system is a living landscape of **messages and digital graffitis anchored in exact space and time coordinates**.
 
-Human validation does not occur through digital verification algorithms, but through **real physical encounters**. The protocol encourages physical presence and proximity, while in the virtual realm the fundamental unit of memory is always the space-time trace (the message), not the user account or profile.
+The fundamental unit of memory and value is the **space-time trace (the message)**, not user accounts, followers, or mandatory physical verification. Messages exist and circulate sovereignly based on their coordinates, cryptographic integrity, and the collective interest of nodes in seeding and preserving them.
 
 ### 2. Protocol Goals and Philosophy
 *   **The Message as a Sovereign Unit:** There are no personal walls, inflated account follower counts, or algorithmic feeds. There are space-time graffitis. A message exists and retains value based on its location, content, and the collective interest in preserving it.
@@ -22,7 +22,7 @@ Human validation does not occur through digital verification algorithms, but thr
 *   **Geography and Time as the Algorithm:** Visibility and discovery depend on geography and temporal moments. No attention optimization algorithms exist: to discover a digital trace, you must explore those coordinates.
 *   **Sovereign Space-Time Placement (Past, Present & Future):** Both location and timestamp are declarative, expressive choices of the author. An author can leave a message anchored right now, in the past (historical documentation), or in the future (future rendezvous, time capsules, announcements).
 *   **Custody and Collective Seeding (Data Sovereignty):** The network does not rely on a centralized proprietary server. Anyone can seed messages, freely deciding which spatial memory parts to preserve, replicate, or purge from local storage as historical custodians.
-*   **Bridge to Physical Encounters:** Although the virtual network stores and exchanges messages regardless of abstract author identity, the protocol incentivizes real-world encounters as the genuine space for human trust validation.
+*   **Optional Physical Presence & Proximity:** While the network operates globally across space-time swarms, local peer proximity (BLE) and in-person QR exchanges remain available as optional complementary tools for local contact verification and offline data exchange.
 
 ---
 
@@ -316,7 +316,7 @@ CREATE TABLE IF NOT EXISTS trusted_handshakes (
     public_key VARCHAR PRIMARY KEY,      -- Ed25519 public key of contact
     alias VARCHAR,                      -- Locally assigned alias/name
     added_at BIGINT NOT NULL,           -- UNIX timestamp when handshake was established
-    qr_verified BOOLEAN DEFAULT TRUE    -- Verified via physical in-person QR exchange
+    qr_verified BOOLEAN DEFAULT TRUE    -- Verified via QR exchange or local pairing
 );
 ```
 
@@ -357,8 +357,8 @@ CREATE TABLE IF NOT EXISTS trusted_handshakes (
    ```
 
 ### Handshake Role & Storage Immunity:
-*   **In-Person Handshake:** Direct exchange of public keys (e.g. face-to-face QR code scanning) stored locally in `trusted_handshakes`.
-*   **Prominence & Immunity:** Messages authored by public keys in `trusted_handshakes` or flagged as `is_pinned = TRUE` are granted immunity against automatic storage metabolism purges.
+*   **Storage Immunity & Custody:** Messages explicitly pinned by the user (`is_pinned = TRUE` / `.keep`) or authored by trusted contacts in `trusted_handshakes` are granted immunity against automatic storage metabolism purges.
+*   **Optional In-Person Exchange:** Direct exchange of public keys (e.g. face-to-face QR code scanning or BLE proximity) can populate `trusted_handshakes` locally as an optional convenience.
 
 ---
 

@@ -1,6 +1,9 @@
 # Learning 06: Space-Time Visibility & Handshake Mechanics (Milestone 3 - Web Pivot)
 
-This design outlines our approach to visibility and presence in the new Web MVP architecture, replacing the old Bluetooth (BLE) approach with an organic, coordinate-based visibility system.
+> [!NOTE]
+> **Architectural Evolution:** Face-to-face encounters and in-person QR verification were initially explored as mandatory trust anchors, but the architecture has minimized physical encounter requirements. The system centers on sovereign message propagation, spatial swarms via WebRTC + Tracker, embedded DuckDB storage, and collective seeding custody (Seed / Unseed). In-person and BLE proximity mechanisms are preserved as optional local offline capabilities.
+
+This design outlines our approach to visibility and presence in the Web MVP architecture, replacing hardware-only presence with an organic, coordinate-based visibility system.
 
 ## 1. Architectural Strategy (The Web Pivot)
 We are moving away from BLE hardware presence and adopting a browser-first WebRTC + Tracker architecture.

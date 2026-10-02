@@ -47,7 +47,7 @@ Message custody and query execution remain local-first and client-sovereign:
   - Web clients execute `@duckdb/duckdb-wasm` over browser IndexedDB.
   - Python CLI and background engine daemons execute embedded `duckdb`.
 - **Storage Metabolism:** Local storage is governed by automated digital metabolism (LRU cleanup) to prevent uncontrolled disk growth on client devices.
-- **Handshake Storage Immunity:** Messages authored by verified in-person contacts (stored in `trusted_handshakes`) or explicitly pinned by the user (`is_pinned = TRUE` / `.keep`) are immune to automatic metabolism purges.
+- **Handshake Storage Immunity:** Messages explicitly pinned by the user (`is_pinned = TRUE` / `.keep`) or authored by trusted contacts (stored in `trusted_handshakes`) are granted immunity from automatic metabolism purges. Direct in-person QR exchanges or local BLE proximity serve as optional local conveniences to populate trusted contacts, rather than mandatory network prerequisites.
 - **Documented Relational Schemas:** Local DuckDB stores adhere to canonical tables: `graffitis` (with fields: `signature`, `author_pk`, `parent_signature`, `timestamp`, `geohash`, `lat`, `lon`, `content_text`, `attachments_json`, `is_pinned`, `raw_json`) and `trusted_handshakes` (with fields: `public_key`, `alias`, `added_at`, `qr_verified`).
 
 ---
