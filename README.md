@@ -5,14 +5,13 @@
 
 Rather than managing abstract digital identities or infinite algorithm-driven feeds, Handshake proposes a landscape of **digital graffitis anchored in exact coordinates and time**. Location is never passive surveillance or tracking imposed on the user; it is an **expressive, voluntary, and strictly necessary act**—in Handshake, no message can exist without its space-time anchor. The virtual network's core unit of value and memory is the space-time trace itself—seeded, preserved, and explored collectively through peer-to-peer swarms. While physical proximity or in-person exchanges exist as optional local capabilities, messages live, circulate, and retain value on their own merit across space and time.
 
-## The "Handshake" Mechanic
-The core organizing principle of custody and preservation is the **Handshake**—an intentional act of collective seeding and cryptographic trust.
+## Space-Time Swarms & Collective Custody
+The network is organized around peer-to-peer swarms, sovereign local storage, and collective custody:
 
-Everyone can explore the messages left in the world, but **prominence, priority seeding, and storage custody** are governed by sovereign choices:
-1. **Local by Default:** A new graffiti is anchored in its exact space-time coordinates, discovered when exploring those coordinates.
-2. **Collective Custody (Seed / Unseed):** Users act as custodians of spatial memory, actively deciding which graffitis to preserve and replicate for nearby swarms.
-3. **Prominence & Storage Immunity:** Messages explicitly pinned by the user (or authored by trusted contacts in their local contact book) receive visual priority and are granted immunity against automatic local storage metabolism purges.
-4. **Optional In-Person Pairing:** Direct local contact exchange (via QR code or BLE proximity) is available as an optional convenience to build personal contact books, without acting as a barrier to network exploration.
+1. **Local by Default:** Every graffiti is anchored in its exact space-time coordinates, discovered when exploring those coordinates.
+2. **Collective Custody (Seed / Unseed):** Users act as custodians of spatial memory. You sovereignly choose which graffitis to seed and preserve in your local DuckDB, and which to leave to automatic storage metabolism.
+3. **P2P Handshakes:** When nodes explore the same space-time zone, they establish direct peer-to-peer connections (WebRTC data handshakes over `strata-sync`) to discover and synchronize messages without servers.
+4. **Trusted Contacts & Storage Immunity:** Users can optionally exchange cryptographic identities (via QR or BLE handshakes) to build local contact books, granting their messages visual prominence and immunity from storage purges.
 
 ## Architecture: The Web MVP
 
