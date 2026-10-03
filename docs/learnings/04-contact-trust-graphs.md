@@ -16,14 +16,14 @@ The `ContactBook` is a local database of public keys mapped to human-readable al
 - **Local Sovereignty:** Your contacts are private to you. No central server knows who your friends are.
 
 ## 3. Trust Graphs & Visibility Multipliers
-By recognizing identities, we build our core visibility mechanic:
-- **Highlighted Traces:** Messages left by a trusted contact (someone in your `ContactBook`) are always highlighted and visible from much further distances in space and time.
-- **Reputation (Handshake Accumulation):** Even for strangers, if a message accumulates many Handshakes (validations from other users), it becomes a high-signal trace that is visible from further away.
+By recognizing identities, we build local visibility and custody mechanics:
+- **Highlighted Traces:** Messages left by a trusted contact (someone in your `ContactBook` added via cryptographic handshake) are highlighted and visible from further distances in space and time.
+- **Collective Seeding (Swarm Availability):** When multiple nodes choose to seed a message locally (`Seed / Unseed`), its replication across the swarm increases, keeping it available and durable for anyone exploring those coordinates.
 
 ## 4. The Handshake Protocol (Intentional Trust)
-A "Handshake" is the act of two peers cryptographically verifying their identities.
-- **Mechanism:** In the Web MVP, this is typically an intentional act done in person. Users might scan a QR code displayed on each other's screens, exchanging their Public Keys.
-- **Verification:** Once exchanged and verified, the UI prompts the user to add the peer to their `ContactBook` with a friendly alias. This "links" the cryptographic identity to a human name and activates the visibility multiplier for their messages.
+A "Handshake" between users is the voluntary act of two peers cryptographically verifying their public keys:
+- **Mechanism:** Users can scan a QR code displayed on each other's screens or exchange public keys via local BLE proximity.
+- **Verification:** Once exchanged and verified, the client adds the public key to the local `ContactBook` (and `trusted_handshakes` table) with a friendly alias. This links the cryptographic identity to a human name, activates visual prominence for their messages, and grants them storage immunity against metabolism purges.
 
 ---
 *Code Reference:* See `src/strata/core/identity.py` for identity management.

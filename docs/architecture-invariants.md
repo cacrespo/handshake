@@ -56,6 +56,6 @@ Message custody and query execution remain local-first and client-sovereign:
 
 Data exchange between nodes is direct, peer-to-peer, and zero-trust:
 
-- **Gossip `strata-sync` Wire Protocol:** Peers synchronize graffitis directly over WebRTC DataChannels labeled `"strata-sync"` in browser swarms, and over Bluetooth Low Energy (BLE) or local transport during physical proximity encounters.
+- **Gossip `strata-sync` Wire Protocol:** Peers perform a P2P connection handshake and synchronize graffitis directly over WebRTC DataChannels labeled `"strata-sync"` in browser swarms, and over Bluetooth Low Energy (BLE) or local transport during physical proximity encounters.
 - **Pull-Based Inventory Negotiation:** Synchronization follows an inventory-first negotiation (`request_sync` and `sync_response`) to minimize redundant data transfer across channels.
 - **Zero-Trust Transport Verification:** Nodes never trust the transport mechanism. Every received graffiti must pass full canonical JSON reconstruction and Ed25519 signature verification against `header.author_pk` before ingestion into local storage.

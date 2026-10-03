@@ -221,7 +221,7 @@ Relayed transparently through the Tracker to negotiate direct P2P WebRTC data ch
 
 ## 5. WebRTC DataChannel Synchronization Protocol (`strata-sync`)
 
-Once a direct WebRTC connection is established between two peers, communication occurs over an RTCDataChannel labeled `"strata-sync"`.
+Once a direct WebRTC connection is established between two peers (following the signaling handshake coordinated by the Tracker), communication occurs over an RTCDataChannel labeled `"strata-sync"`.
 
 ### DataChannel Message Exchange:
 
