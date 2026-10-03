@@ -1,6 +1,9 @@
 # Learning 04: Contacts & Trust Graphs (Web MVP)
 
-In our current Web MVP, we rely on **Identity-aware communication**. This allows users to build "Trust Graphs" based on physical encounters, which directly influence how they perceive the digital world.
+> [!NOTE]
+> **Architectural Evolution:** While physical in-person handshakes (QR scanning) were an early conceptual model for trust validation, the network architecture has prioritized sovereign space-time message circulation and collective seeding custody (Seed / Unseed). In-person pairing remains an optional convenience for personal contact books rather than a prerequisite for message discovery or network participation.
+
+In our current Web MVP, we rely on **Identity-aware communication**. This allows users to build "Trust Graphs" based on cryptographic keys and contacts, which influence local custody and visibility.
 
 ## 1. Identity Persistence
 We use an `IdentityManager`. 
