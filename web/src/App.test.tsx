@@ -130,4 +130,58 @@ describe('App Component', () => {
     fireEvent.click(gpsBtn);
     expect(gpsBtn).toHaveClass('active');
   });
+
+  it('renders the space-time triad cockpit layout with 3 panels', () => {
+    render(<App />);
+
+    // Spatial Radar Panel (25%)
+    expect(screen.getByTestId('spatial-radar-panel')).toBeInTheDocument();
+    expect(screen.getByText(/Radar Espacial/i)).toBeInTheDocument();
+
+    // Message Stream Panel (50% Hero)
+    expect(screen.getByTestId('message-stream-hero')).toBeInTheDocument();
+    expect(screen.getByText(/Transmisiones Soberanas/i)).toBeInTheDocument();
+
+    // Temporal Horizon Panel (25%)
+    expect(screen.getByTestId('temporal-horizon-panel')).toBeInTheDocument();
+    expect(screen.getByText(/Horizonte Temporal/i)).toBeInTheDocument();
+    expect(screen.getByText(/Las 3 Dimensiones del Protocolo/i)).toBeInTheDocument();
+  });
+
+  it('filters messages across protocol temporal dimensions (Past, Present, Future)', () => {
+    render(<App />);
+
+    // Click on "Pasado" dimension in temporal panel
+    const pastBtn = screen.getByTestId('epoch-btn-past');
+    fireEvent.click(pastBtn);
+
+    // Active epoch filter chip should appear in message stream
+    expect(screen.getByText(/Época: 🏛️ Pasado/i)).toBeInTheDocument();
+
+    // Reset dimensions
+    const resetBtn = screen.getByRole('button', { name: /Ver Todas las Dimensiones/i });
+    fireEvent.click(resetBtn);
+    expect(screen.queryByText(/Época: 🏛️ Pasado/i)).not.toBeInTheDocument();
+  });
+
+  it('toggles mobile responsive triad tabs', () => {
+    render(<App />);
+
+    const spatialTab = screen.getByRole('button', { name: /Radar \(25%\)/i });
+    const temporalTab = screen.getByRole('button', { name: /Tiempo \(25%\)/i });
+    const messagesTab = screen.getByRole('button', { name: /Mensajes \(50%\)/i });
+
+    // Switch to Spatial tab
+    fireEvent.click(spatialTab);
+    expect(spatialTab).toHaveClass('active');
+
+    // Switch to Temporal tab
+    fireEvent.click(temporalTab);
+    expect(temporalTab).toHaveClass('active');
+
+    // Switch back to Messages tab
+    fireEvent.click(messagesTab);
+    expect(messagesTab).toHaveClass('active');
+  });
 });
+
