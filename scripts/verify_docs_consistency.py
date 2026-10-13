@@ -306,6 +306,7 @@ def find_unnegated_patterns(text: str, pattern: re.Pattern) -> list[str]:
         "never",
         "without",
         "neither",
+        "zero",
         "prevent",
         "prevents",
         "eliminates",
