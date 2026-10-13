@@ -356,14 +356,13 @@ def check_architectural_invariants(repo_root: Path) -> list[str]:
             ("no centralized persistence", "No centralized persistence of messages or user accounts"),
         ],
         "Sovereign Storage": [
-            ("DuckDB", "Embedded DuckDB"),
-            ("metabolism", "Storage metabolism"),
-            ("immunity", "Handshake storage immunity"),
+            ("local-first", "Local-first sovereign storage"),
+            ("emergent", "Emergent network persistence"),
         ],
         "P2P Sync": [
-            ("strata-sync", "strata-sync protocol"),
-            ("WebRTC", "WebRTC DataChannels"),
-            ("BLE", "Bluetooth Low Energy / physical presence"),
+            ("direct", "Direct peer-to-peer exchange"),
+            ("inventory", "Inventory-first negotiation"),
+            ("zero-trust", "Zero-trust transport verification"),
         ],
     }
 

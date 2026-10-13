@@ -1,4 +1,4 @@
-# Handshake: Space-Time Conexions
+# Handshake: Space-Time Connections
 
 ## The Vision
 **Handshake** is a decentralized, space-time anchored communication network where the central focus is **the message, not user profiles or accounts**. 
@@ -37,7 +37,7 @@ graph TD
 ```
 
 ### Key Components
-1. **Django (The Space-Time Tracker):** Django does not act as a centralized database for all messages. Instead, it acts as a BitTorrent Tracker. When you navigate to a coordinate on themap, Django connects you with other users (peers) exploring the same area.
+1. **Django (The Space-Time Tracker):** Django does not act as a centralized database for all messages. Instead, it acts as a **P2P Tracker (similar to a BitTorrent/WebTorrent tracker)**: it never stores messages, but coordinates WebRTC signaling and connects peers exploring the same area on the map.
 2. **Web Frontend (Vite/React + WebRTC):** Provides a rich, premium interface to navigate space and a time-slider to explore the past. Once Django connects you to peers, your browser downloads and seeds the graffitis directly from them via WebRTC.
 3. **DuckDB (Embedded Storage Engine):** Serves as the embedded OLAP database engine both in browser (`@duckdb/duckdb-wasm` over IndexedDB) and backend/CLI (`duckdb` in Python). It powers fast spatial-temporal queries, recursive thread reconstruction, and local storage metabolism.
 4. **Strata (The Agnostic Engine):** The pure-Python core logic (`src/strata`). It handles validation, Ed25519 cryptographic identity, canonical JSON signing, and protocol data structures independent of the transport layer.
