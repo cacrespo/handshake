@@ -31,7 +31,7 @@ The fundamental unit of memory and value is the **space-time trace (the message)
 The protocol does not implement "user accounts", "registrations", or "profiles". Identity in Handshake is purely cryptographic, decentralized, and message-signature oriented:
 
 *   **Ed25519 Keypairs:** Every node or author uses an Ed25519 asymmetric keypair:
-    *   **Private Key (SK):** Local secret to digitally sign published graffitis. Stored strictly in client storage.
+    *   **Private Key (SK):** Local secret to digitally sign published messages. Stored strictly in client storage.
     *   **Public Key (PK):** Author identifier (`author_pk`) used by the P2P swarm to verify message integrity and authenticity, ensuring it was not tampered with during transport.
 *   **Optional Pseudonymity:** Users can reuse keypairs for author consistency or generate ephemeral keys for isolated messages. The protocol does not link names, emails, or personal data to any key.
 
@@ -49,7 +49,7 @@ To enable sovereign import and export of keys between clients (Web, CLI, mobile)
 
 ## 2. Message Schema
 
-All graffitis on the network are public, open, and immutable. They are serialized and transmitted using strict JSON formatting. The schema consists of three primary blocks: `header`, `location`, and `content`.
+All messages on the network are public, open, and immutable. They are serialized and transmitted using strict JSON formatting. The schema consists of three primary blocks: `header`, `location`, and `content`.
 
 ```json
 {
@@ -86,19 +86,19 @@ All graffitis on the network are public, open, and immutable. They are serialize
 
 ### Fields:
 *   `header.author_pk`: Ed25519 public key (64 hex characters / 32 bytes) of the signing author.
-*   `header.parent_signature` (Optional): Ed25519 signature of the parent graffiti being replied to (`null` if initiating a new root conversation). Enables spatial conversation trees and graphs.
-*   `header.timestamp`: UNIX timestamp (seconds) when the graffiti is anchored in time.
+*   `header.parent_signature` (Optional): Ed25519 signature of the parent message being replied to (`null` if initiating a new root conversation). Enables spatial conversation trees and graphs.
+*   `header.timestamp`: UNIX timestamp (seconds) when the message is anchored in time.
 *   `header.signature`: Ed25519 digital signature of the canonical serialized JSON object (excluding this signature field).
-*   `location.geohash`: Standard Geohash (precision 6 or 7) used to index and discover spatial peer swarms in the area.
+*   `location.geohash`: Standard Geohash (precision 6 or 7) derived from coordinates, used to index and discover spatial peer swarms in the area.
 *   `location.coordinates`: High-precision geographical coordinates (`lat`, `lon`) for map rendering.
 *   `location.proof` (Optional): Spatial or co-presence proof (`type`: `"GPS"`, `"WITNESS_SWARM"`, or `"NONE"`).
 *   `content.text`: Message text content (required, plain text or lightweight markdown).
 *   `content.attachments` (Optional): List of linked multimedia attachments. Each item contains `url`, `sha256` for cryptographic integrity verification, and `mime_type`.
 
-### Canonical Serialization for Signature Verification:
+### Canonical Serialization for Signature Verification (RFC 8785):
 To generate or verify the Ed25519 signature:
 1. Take the message JSON object **excluding the `header.signature` field**.
-2. Recursively sort all object keys alphabetically (`sort_keys=True` in Python / alphabetical object property sorting in TypeScript).
+2. Recursively sort all object keys in lexicographical (Unicode code point) order following the JSON Canonicalization Scheme (RFC 8785).
 3. Compactify the normalized JSON string without superfluous whitespace, encode as UTF-8, and sign/verify with the Ed25519 keypair.
 
 ### Extensibility and Data Preservation:
@@ -111,9 +111,9 @@ To generate or verify the Ed25519 signature:
 
 A cornerstone of the Handshake protocol is that **both space and time are expressive, sovereign choices of the creator**:
 
-1. **Declarative Coordinates (Roots & Replies):** Leaving a graffiti is intentional, akin to painting a specific physical wall. Location is never passive tracking; it is an expressive, voluntary, and necessary choice. In replies as well as root messages, coordinates are sovereign and declarative: an author may anchor a reply at the exact location of the parent graffiti, at their current physical location, or at any coordinates chosen on the map.
+1. **Declarative Coordinates (Roots & Replies):** Leaving a message is intentional, akin to leaving a mark at a specific physical spot. Location is never passive tracking; it is an expressive, voluntary, and necessary choice. In replies as well as root messages, coordinates are sovereign and declarative: an author may anchor a reply at the exact location of the parent message, at their current physical coordinates (tracing an itinerant physical path), or at any coordinates chosen on the map.
 2. **Declarative Time (Writing to Future & Past):**
-   - **Future Graffitis:** An author can anchor a message in a future timestamp (e.g., an invitation to a physical meet-up next Saturday, a time capsule, a prediction, or a scheduled announcement). The message will be discovered by peers exploring that future date on the temporal timeline.
+   - **Future Anchors:** An author can anchor a message in a future timestamp (e.g., an invitation to a meet-up next Saturday, a time capsule, a prediction, or a scheduled announcement). The message will be discovered by peers exploring that future date on the temporal timeline.
    - **Historical Anchors:** An author can anchor a message in a past timestamp (e.g., chronicling a historical event that occurred at that location).
 3. **No Artificial Rejection:** Swarm peers and trackers **do not reject** messages whose `timestamp` lies ahead of or behind the node's local system clock. Validity is determined solely by cryptographic Ed25519 signature integrity and canonical payload verification.
 
@@ -121,7 +121,7 @@ A cornerstone of the Handshake protocol is that **both space and time are expres
 
 ## 4. Tracker Signaling Wire Protocol (WebSocket)
 
-The Django Space-Time Tracker serves exclusively as a decentralized matchmaking and signaling server. It does not store messages or track user accounts; it connects peers interested in the same spatial zones (`geohash[:5]`, approx. 4.9 km × 4.9 km).
+The Space-Time Tracker serves exclusively as an ephemeral matchmaking and signaling coordinator. It maintains no centralized persistence of messages or user accounts; it connects peers exploring the same spatial zones (`geohash[:5]`, approx. 4.9 km × 4.9 km) to negotiate direct peer-to-peer transport.
 
 **Endpoint:** `ws://<host>:<port>/ws/tracker/`
 
@@ -219,23 +219,40 @@ Relayed transparently through the Tracker to negotiate direct P2P WebRTC data ch
 
 ---
 
-## 5. WebRTC DataChannel Synchronization Protocol (`strata-sync`)
+## 5. Direct Peer Synchronization Protocol (`strata-sync`)
 
-Once a direct WebRTC connection is established between two peers (following the signaling handshake coordinated by the Tracker), communication occurs over an RTCDataChannel labeled `"strata-sync"`.
+Once a direct peer connection is established (e.g. over a WebRTC RTCDataChannel labeled `"strata-sync"` in browser swarms, or local transport in proximity encounters), data exchange is demand-driven and governed by inventory negotiation.
 
-### DataChannel Message Exchange:
+### DataChannel Message Exchange (3-Step Inventory Negotiation):
 
-#### 1. Synchronization Request (`request_sync`)
-Upon channel opening (`onopen`), the initiating client requests graffitis for its current spatial viewport:
+#### 1. Spatial Inventory Announcement (`inventory`)
+Upon channel opening (`onopen`) or when a peer's viewport changes, the initiating client sends an inventory of known message signatures for its current spatial cell:
 ```json
 {
-  "type": "request_sync",
-  "geohash": "69y7p"
+  "type": "inventory",
+  "geohash": "69y7p",
+  "signatures": [
+    "3f9c4a...signature1",
+    "a1b2c3...signature2"
+  ]
 }
 ```
 
-#### 2. Synchronization Response & Live Broadcast (`sync_response`)
-Sent in response to `request_sync` or broadcast to all connected swarm peers whenever a new graffiti is authored or seeded locally:
+*(Backward compatibility: clients also support receiving legacy `request_sync` containing `{"type": "request_sync", "geohash": "..."}`).*
+
+#### 2. Selective Missing Message Request (`request_missing`)
+The receiving peer compares the inventory against its local storage and requests only signatures it does not possess:
+```json
+{
+  "type": "request_missing",
+  "signatures": [
+    "3f9c4a...signature1"
+  ]
+}
+```
+
+#### 3. Payload Delivery (`sync_response`)
+Sent in response to `request_missing` (delivering only requested messages), or broadcast across active peers when a new message is published locally:
 ```json
 {
   "type": "sync_response",
@@ -260,25 +277,24 @@ Sent in response to `request_sync` or broadcast to all connected swarm peers whe
 }
 ```
 
-#### 3. Ingestion & Cryptographic Verification Pipeline:
+#### 4. Ingestion & Zero-Trust Cryptographic Verification Pipeline:
 When a peer receives a `sync_response`:
-1. It iterates through each graffiti in `graffitis`.
-2. Reconstructs the canonical JSON payload (excluding `header.signature`).
+1. It iterates through each message in `graffitis`.
+2. Reconstructs the canonical JSON payload (excluding `header.signature`) according to RFC 8785.
 3. Verifies the Ed25519 signature against `header.author_pk`.
-4. If valid, persists the graffiti in local DuckDB/IndexedDB and updates the visual viewport.
+4. If valid, ingests the message into sovereign local storage and updates visual views. Untrusted or tampered messages are immediately discarded.
 
 ---
 
 ## 6. Swarm Grouping & InfoHash
 
-Graffitis are grouped into **spatial and temporal directories**:
+Messages are grouped into **spatial cells and temporal epochs**:
 
 1. **Spatial Resolution:** Territory is partitioned into spatial cells using **Geohash precision 6 or 7** (approx. ~1.2 km to ~150 meters).
 2. **Temporal Resolution:** Time is partitioned into **monthly epochs** in `YYYY-MM` format.
 3. **InfoHash Generation:** A deterministic SHA-1 identifier is computed for the swarm:
    $$\text{InfoHash} = \text{SHA1}(\text{geohash} + ":" + \text{epoch})$$
-4. **Collective Seeding:** Peer connections exchange messages belonging to the given `InfoHash`. Each file is saved locally as:
-   `{timestamp}_{author_pk_prefix}.msg`
+4. **Collective Seeding:** Peer connections exchange messages belonging to the given `InfoHash`, persisting them in local sovereign storage.
 5. **Historical Custody:** Nodes can seed both current, past, and future epochs stored locally, acting as custodians of spatial-temporal memory.
 
 ---
@@ -357,13 +373,13 @@ CREATE TABLE IF NOT EXISTS trusted_handshakes (
    ```
 
 ### Handshake Role & Storage Immunity:
-*   **Storage Immunity & Custody:** Messages explicitly pinned by the user (`is_pinned = TRUE` / `.keep`) or authored by trusted contacts in `trusted_handshakes` are granted immunity against automatic storage metabolism purges.
+*   **Storage Immunity & Custody:** Messages explicitly pinned by the user (`is_pinned = TRUE`) or authored by trusted contacts in `trusted_handshakes` are granted immunity against automatic storage metabolism purges.
 *   **Optional In-Person Exchange:** Direct exchange of public keys (e.g. face-to-face QR code scanning or BLE proximity) can populate `trusted_handshakes` locally as an optional convenience.
 
 ---
 
 ## 8. Spatial Conversation Threads
 
-*   **Parent Linking (`parent_signature`):** Replying to a graffiti includes the parent message's Ed25519 signature in the header.
+*   **Parent Linking (`parent_signature`):** Replying to a message includes the parent message's Ed25519 signature in the header.
 *   **Sovereign & Itinerant Replies:** Every reply is a sovereign space-time trace carrying its own declarative coordinates. An author may anchor a reply at the exact same location as the parent message, at their own physical location (tracing an itinerant physical path across the map), or at any arbitrary coordinates chosen across space.
 *   **Decentralized Tree Reconstruction:** The client connects messages and reconstructs the thread tree locally using cryptographic signatures. If a node lacks a parent message, it can request it with priority from swarm peers.
