@@ -41,6 +41,17 @@ import {
   type InventoryMessage
 } from "./sync";
 
+import {
+  initDB,
+  saveMessage,
+  saveMessages,
+  getAllMessages,
+  togglePin as dbTogglePin,
+  saveContact,
+  getContacts,
+  deleteContact
+} from "./storage/db";
+
 
 
 function getDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -254,6 +265,7 @@ export default function App() {
   const activeComposerGeohash = encodeGeohash(activeComposerCoords[0], activeComposerCoords[1]);
 
   const [trustedAuthors, setTrustedAuthors] = useState<string[]>([]);
+  const [pinnedSignatures, setPinnedSignatures] = useState<Set<string>>(new Set());
   const [mapTarget, setMapTarget] = useState<[number, number] | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -295,17 +307,74 @@ export default function App() {
     setLogs(prev => [{ text, type, timestamp }, ...prev].slice(0, 100));
   };
 
-  // 1. Initialize Cryptographic Identity (Ed25519)
+  const generateNewIdentity = (): string => {
+    const kp = nacl.sign.keyPair();
+    const pubHex = toHex(kp.publicKey);
+    const seedHex = toHex(getSeedFromKeyPair(kp));
+    localStorage.setItem("handshake_pubkey", pubHex);
+    localStorage.setItem("handshake_seckey", seedHex);
+    setPublicKey(pubHex);
+    setSecretKey(seedHex);
+    addLog("Created new ephemeral identity", "success");
+    return pubHex;
+  };
+
+  const loadPersistedData = async (activePubKey: string) => {
+    try {
+      await initDB();
+
+      // 1. Load contacts
+      const storedContacts = await getContacts();
+      if (storedContacts && storedContacts.length > 0) {
+        setTrustedAuthors(storedContacts.map(c => c.public_key));
+      } else {
+        const storedTrust = localStorage.getItem("handshake_trust");
+        if (storedTrust) {
+          try {
+            const legacyKeys: string[] = JSON.parse(storedTrust);
+            setTrustedAuthors(legacyKeys);
+            for (const pk of legacyKeys) {
+              await saveContact({ public_key: pk, alias: pk.substring(0, 8), added_at: Date.now() });
+            }
+          } catch (e) {
+            console.error("Error migrating legacy trust to IndexedDB:", e);
+          }
+        }
+      }
+
+      // 2. Load stored messages
+      const storedMsgs = await getAllMessages();
+      if (storedMsgs && storedMsgs.length > 0) {
+        const locals: any[] = [];
+        const remotes: any[] = [];
+        const pinned = new Set<string>();
+
+        for (const m of storedMsgs) {
+          const sig = m.signature || m.header?.signature;
+          if ((m.is_pinned === 1 || m.is_pinned === true) && sig) {
+            pinned.add(sig);
+          }
+          if (m.is_local || (activePubKey && m.header?.author_pk === activePubKey)) {
+            locals.push(m);
+          } else {
+            remotes.push(m);
+          }
+        }
+
+        setLocalGraffitis(locals);
+        setRemoteGraffitis(remotes);
+        setPinnedSignatures(pinned);
+        addLog(`Cargados ${storedMsgs.length} mensajes desde almacenamiento local soberano (IndexedDB).`, "success");
+      }
+    } catch (err: any) {
+      console.error("Error loading persisted data from IndexedDB:", err);
+    }
+  };
+
+  // 1. Initialize Cryptographic Identity (Ed25519) and Sovereign Storage (IndexedDB)
   useEffect(() => {
     const storedSec = localStorage.getItem("handshake_seckey");
-    const storedTrust = localStorage.getItem("handshake_trust");
-    if (storedTrust) {
-      try {
-        setTrustedAuthors(JSON.parse(storedTrust));
-      } catch (e) {
-        console.error(e);
-      }
-    }
+    let activePubHex = "";
 
     if (storedSec) {
       try {
@@ -316,14 +385,17 @@ export default function App() {
         localStorage.setItem("handshake_seckey", seedHex);
         setPublicKey(pubHex);
         setSecretKey(seedHex);
+        activePubHex = pubHex;
         addLog("Cryptographic identity loaded from localStorage", "success");
       } catch (e) {
         console.error("Error loading key from localStorage, generating new:", e);
-        generateNewIdentity();
+        activePubHex = generateNewIdentity();
       }
     } else {
-      generateNewIdentity();
+      activePubHex = generateNewIdentity();
     }
+
+    loadPersistedData(activePubHex);
 
     // Try to get GPS
     if (navigator.geolocation) {
@@ -352,17 +424,6 @@ export default function App() {
     const gh = encodeGeohash(coords[0], coords[1]);
     setGeohash(gh);
   }, [coords]);
-
-  const generateNewIdentity = () => {
-    const kp = nacl.sign.keyPair();
-    const pubHex = toHex(kp.publicKey);
-    const seedHex = toHex(getSeedFromKeyPair(kp));
-    localStorage.setItem("handshake_pubkey", pubHex);
-    localStorage.setItem("handshake_seckey", seedHex);
-    setPublicKey(pubHex);
-    setSecretKey(seedHex);
-    addLog("Created new ephemeral identity", "success");
-  };
 
   const exportKey = () => {
     if (!secretKey) return;
@@ -862,6 +923,7 @@ export default function App() {
             return;
           }
           let addedCount = 0;
+          const newlyAdded: any[] = [];
           
           setRemoteGraffitis(prev => {
             const existingSigs = new Set<string>();
@@ -874,8 +936,16 @@ export default function App() {
 
             const newValidGraffitis = processIncomingGraffitis(incoming, existingSigs);
             addedCount = newValidGraffitis.length;
+            newlyAdded.push(...newValidGraffitis);
             return [...prev, ...newValidGraffitis];
           });
+
+          // Persist verified incoming messages to IndexedDB (Pillar 4)
+          if (newlyAdded.length > 0) {
+            saveMessages(newlyAdded).catch(err => {
+              console.error("Error persisting incoming messages to IndexedDB:", err);
+            });
+          }
 
           if (addedCount > 0) {
             addLog(`[P2P] Synced ${addedCount} new graffitis from peer!`, "success");
@@ -958,20 +1028,61 @@ export default function App() {
     });
   };
 
-  const toggleTrust = (authorPk: string) => {
-    setTrustedAuthors(prev => {
-      const updated = prev.includes(authorPk) 
-        ? prev.filter(pk => pk !== authorPk) 
-        : [...prev, authorPk];
-      localStorage.setItem("handshake_trust", JSON.stringify(updated));
-      addLog(
-        prev.includes(authorPk) 
-          ? `Removed author ${authorPk.substring(0,8)} from trust network.` 
-          : `Handshaked & Trusted author ${authorPk.substring(0,8)}!`, 
-        "success"
-      );
-      return updated;
+  const toggleTrust = async (authorPk: string) => {
+    const isCurrentlyTrusted = trustedAuthors.includes(authorPk);
+    const updated = isCurrentlyTrusted 
+      ? trustedAuthors.filter(pk => pk !== authorPk) 
+      : [...trustedAuthors, authorPk];
+    setTrustedAuthors(updated);
+    localStorage.setItem("handshake_trust", JSON.stringify(updated));
+
+    try {
+      if (isCurrentlyTrusted) {
+        await deleteContact(authorPk);
+      } else {
+        await saveContact({
+          public_key: authorPk,
+          alias: authorPk.substring(0, 8),
+          added_at: Date.now()
+        });
+      }
+    } catch (err: any) {
+      console.error("Error updating contact in IndexedDB:", err);
+    }
+
+    addLog(
+      isCurrentlyTrusted 
+        ? `Removed author ${authorPk.substring(0,8)} from trust network.` 
+        : `Handshaked & Trusted author ${authorPk.substring(0,8)}!`, 
+      "success"
+    );
+  };
+
+  const handleTogglePin = async (signature: string) => {
+    if (!signature) return;
+    const isCurrentlyPinned = pinnedSignatures.has(signature);
+    const nextState = !isCurrentlyPinned;
+
+    setPinnedSignatures(prev => {
+      const next = new Set(prev);
+      if (nextState) {
+        next.add(signature);
+      } else {
+        next.delete(signature);
+      }
+      return next;
     });
+
+    setLocalGraffitis(prev => prev.map(g => (g.header?.signature === signature ? { ...g, is_pinned: nextState ? 1 : 0 } : g)));
+    setRemoteGraffitis(prev => prev.map(g => (g.header?.signature === signature ? { ...g, is_pinned: nextState ? 1 : 0 } : g)));
+
+    try {
+      await dbTogglePin(signature, nextState);
+      addLog(nextState ? "Graffiti fijado en tu memoria local (IndexedDB)." : "Graffiti desfijado.", "info");
+    } catch (err: any) {
+      console.error("Error toggling pin in IndexedDB:", err);
+      addLog(`Error al fijar/desfijar mensaje: ${err.message}`, "danger");
+    }
   };
 
   const handleCardClick = (targetCoords: [number, number]) => {
@@ -981,13 +1092,21 @@ export default function App() {
   };
 
   const saveAndSeedMessage = async (graf: any) => {
+    // 1. Always persist to IndexedDB (Local-First Sovereign Storage - Pillar 4)
+    try {
+      await saveMessage({ ...graf, is_local: true });
+    } catch (err: any) {
+      console.error("Error saving message to IndexedDB:", err);
+    }
+
+    setLocalGraffitis(prev => {
+      if (prev.some(g => g.header.signature === graf.header.signature)) return prev;
+      return [...prev, graf];
+    });
+    setRemoteGraffitis(prev => prev.filter(g => g.header.signature !== graf.header.signature));
+
     if (!folderHandle) {
-      setLocalGraffitis(prev => {
-        if (prev.some(g => g.header.signature === graf.header.signature)) return prev;
-        return [...prev, graf];
-      });
-      setRemoteGraffitis(prev => prev.filter(g => g.header.signature !== graf.header.signature));
-      addLog("Guardado en memoria (selecciona una carpeta para guardarlo en disco)", "warning");
+      addLog("Graffiti persistido en almacenamiento local soberano (IndexedDB).", "success");
       return;
     }
 
@@ -1114,6 +1233,7 @@ export default function App() {
   const ThreadedCard = ({ node, depth = 0 }: { node: any; depth: number }) => {
     const isLocal = localGraffitis.some(g => g.header.signature === node.header.signature);
     const isTrusted = trustedAuthors.includes(node.header.author_pk);
+    const isPinned = pinnedSignatures.has(node.header?.signature) || node.is_pinned === 1;
     const nodeGh = getMessageGeohash(node);
     const gCoords = decodeGeohash(nodeGh);
     const dist = getDistance(coords[0], coords[1], gCoords.lat, gCoords.lon);
@@ -1142,6 +1262,11 @@ export default function App() {
                 <span className={`badge ${isTrusted ? "badge-success" : isLocal ? "badge-info" : "badge-warning"}`} style={{ fontSize: "9px", padding: "1px 5px" }}>
                   {isTrusted ? "★ Confiable" : isLocal ? "● Local" : "⚡ P2P"}
                 </span>
+                {isPinned && (
+                  <span className="badge badge-success" style={{ fontSize: "9px", padding: "1px 5px", background: "rgba(16, 185, 129, 0.2)", border: "1px solid #10b981" }}>
+                    📌 Fijado
+                  </span>
+                )}
               </div>
             </div>
 
@@ -1164,7 +1289,18 @@ export default function App() {
             <span className="card-geohash" style={{ fontSize: "11px", color: "var(--text-muted)" }}>
               Geohash: <code style={{ color: "var(--neon-cyan)" }}>{nodeGh.substring(0, 7)}</code>
             </span>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <button
+                className={`btn ${isPinned ? "btn-primary" : "btn-secondary"}`}
+                style={{ padding: "2px 8px", fontSize: "10px", height: "22px", display: "inline-flex", alignItems: "center", gap: "3px" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleTogglePin(node.header.signature);
+                }}
+                title={isPinned ? "Desfijar de tu memoria local" : "Fijar en tu memoria local"}
+              >
+                {isPinned ? "📌 Fijado" : "📌 Fijar"}
+              </button>
               {node.header.author_pk !== publicKey && (
                 <button
                   className="btn btn-secondary"
@@ -1536,6 +1672,13 @@ export default function App() {
                           <span><strong>Geohash:</strong> <code>{grafGh}</code></span>
                         </div>
                         <div className="popup-actions">
+                          <button 
+                            className={`btn ${pinnedSignatures.has(graf.header?.signature) ? "btn-primary" : "btn-secondary"} popup-btn`}
+                            onClick={() => handleTogglePin(graf.header?.signature)}
+                            title={pinnedSignatures.has(graf.header?.signature) ? "Desfijar de tu memoria local" : "Fijar en tu memoria local"}
+                          >
+                            {pinnedSignatures.has(graf.header?.signature) ? "📌 Fijado" : "📌 Fijar"}
+                          </button>
                           {graf.header.author_pk !== publicKey && (
                             <>
                               <button 
@@ -1873,6 +2016,23 @@ export default function App() {
               {settingsTab === 'storage' && (
                 <div className="tab-pane">
                   <div className="info-card">
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                      <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--neon-cyan)" }}>
+                        Almacenamiento Soberano Local-First (Pilar 4)
+                      </span>
+                      <span className="badge badge-success" style={{ fontSize: "10px" }}>IndexedDB Activo</span>
+                    </div>
+                    <p style={{ fontSize: "12px", color: "var(--text-muted)", lineHeight: "1.4", margin: 0 }}>
+                      Tus graffitis descubiertos, huellas creadas y contactos de confianza se persisten en la base de datos local <code>handshake_db</code> de forma soberana e independiente de servidores.
+                    </p>
+                    <div style={{ display: "flex", gap: "12px", fontSize: "11px", color: "var(--text-secondary)", marginTop: "4px" }}>
+                      <span>Mensajes totales: <strong style={{ color: "var(--text-primary)" }}>{allGraffitis.length}</strong></span>
+                      <span>Fijados: <strong style={{ color: "var(--text-primary)" }}>{pinnedSignatures.size}</strong></span>
+                      <span>Contactos: <strong style={{ color: "var(--text-primary)" }}>{trustedAuthors.length}</strong></span>
+                    </div>
+                  </div>
+
+                  <div className="info-card" style={{ marginTop: "12px" }}>
                     <div className="folder-header">
                       <span className="folder-path">{folderName ? `Carpeta activa: ${folderName}` : "Sin carpeta vinculada"}</span>
                       {folderName && (
@@ -1885,7 +2045,7 @@ export default function App() {
                       <Folder size={16} /> {folderName ? "Cambiar Carpeta de Seeding" : "Vincular Carpeta de Disco Local"}
                     </button>
                     <p style={{ fontSize: "12px", color: "var(--text-muted)", lineHeight: "1.4" }}>
-                      Guarda tus graffitis en archivos .msg directamente en tu sistema de archivos para persistencia y respaldo sovereign.
+                      Opcional: Guarda tus graffitis en archivos .msg directamente en tu sistema de archivos para respaldo físico externo.
                     </p>
                     {localGraffitis.length > 0 && (
                       <div style={{ marginTop: "10px" }}>
