@@ -3,7 +3,7 @@
 **Version:** `v0.2.0-draft` (Work in Progress)
 
 > [!NOTE]
-> This document represents the official technical specification of the Handshake protocol. It defines message schemas, cryptographic identity, sovereign storage, and wire protocols to ensure interoperability across clients (TypeScript Web frontend, mobile apps, and Python engine). For core conceptual principles and non-negotiable architectural pillars, see [Architectural Invariants](architecture-invariants.md).
+> This document represents the official technical specification of the Handshake protocol. It defines message schemas, cryptographic identity, sovereign storage models, and wire protocols to ensure interoperability across heterogeneous clients (web frontends, native daemons, and mobile implementations). For core conceptual principles and non-negotiable architectural pillars, see [Architectural Invariants](architecture-invariants.md).
 
 ---
 
@@ -17,14 +17,14 @@ The protocol does not implement "user accounts", "registrations", or "profiles".
 *   **Optional Pseudonymity:** Users can reuse keypairs for author consistency or generate ephemeral keys for isolated messages. The protocol does not link names, emails, or personal data to any key.
 
 ### Portable Identity Format (`.key`):
-To enable sovereign import and export of keys between clients (Web, CLI, mobile) without server dependency:
+To enable sovereign import and export of keys between clients without server dependency:
 ```json
 {
   "public_key": "hexadecimal_public_key_64_characters",
   "private_key": "hexadecimal_private_seed_64_characters"
 }
 ```
-*Standardized on a 32-byte private seed (64 hex characters) when exporting. For backward compatibility, clients also accept legacy 64-byte secret keys (128 hex characters) during import.*
+*Standardized on a 32-byte private seed (64 hexadecimal characters).*
 
 ---
 
@@ -65,16 +65,16 @@ All messages on the network are public, open, and immutable. They are serialized
 }
 ```
 
-### Fields:
-*   `header.author_pk`: Ed25519 public key (64 hex characters / 32 bytes) of the signing author.
-*   `header.parent_signature` (Optional): Ed25519 signature of the parent message being replied to (`null` if initiating a new root conversation). Enables spatial conversation trees and graphs.
-*   `header.signature`: Ed25519 digital signature of the canonical serialized JSON object (excluding this signature field).
-*   `anchor.timestamp`: UNIX timestamp (seconds) when the message is anchored in time.
-*   `anchor.geohash`: Standard Geohash (precision 6 or 7) derived from coordinates, used to index and discover spatial peer swarms in the area.
-*   `anchor.coordinates`: High-precision geographical coordinates (`lat`, `lon`) for map rendering.
-*   `anchor.proof` (Optional): Spatial or co-presence proof (`type`: `"GPS"`, `"WITNESS_SWARM"`, or `"NONE"`).
-*   `content.text`: Message text content (required, plain text or lightweight markdown).
-*   `content.attachments` (Optional): List of linked multimedia attachments. Each item contains `url`, `sha256` for cryptographic integrity verification, and `mime_type`.
+### Fields and Technical Validation Rules:
+*   `header.author_pk` (String, Required): 64-character hexadecimal representation of the author's 32-byte Ed25519 public key. Nodes MUST verify that it decodes to exactly 32 bytes and represents a valid Ed25519 curve point.
+*   `header.parent_signature` (String | null, Optional): 128-character hexadecimal string representing the Ed25519 signature of the parent message being replied to (`null` if initiating a new root conversation). Nodes use this field to construct conversation trees without enforcing that author or location match the parent message.
+*   `header.signature` (String, Required): 128-character hexadecimal Ed25519 signature computed over the canonical serialized JSON payload (RFC 8785) excluding this field itself.
+*   `anchor.timestamp` (Integer, Required): 64-bit signed integer UNIX timestamp (seconds). **Validation Rule:** Nodes and trackers MUST NOT reject messages based on clock skew or future/past offsets (declarative time). Validity is governed solely by cryptographic signature integrity over the canonical payload.
+*   `anchor.geohash` (String, Required): Canonical Geohash string (precision 6 or 7) derived from coordinates. Nodes MUST verify that `anchor.geohash` matches the geographic bounds of `anchor.coordinates`.
+*   `anchor.coordinates` (Object, Required): High-precision geographical coordinates containing `lat` (Float between `-90.0` and `+90.0`) and `lon` (Float between `-180.0` and `+180.0`). In both root messages and conversation replies, coordinates are sovereign and declarative (replies are not required to share the parent's coordinates).
+*   `anchor.proof` (Object, Optional): Cryptographic co-presence or spatial proof (`type`: `"GPS"`, `"WITNESS_SWARM"`, or `"NONE"`).
+*   `content.text` (String, Required): UTF-8 message text content (plain text or lightweight markdown).
+*   `content.attachments` (Array of Objects, Optional): List of linked multimedia attachments. Each item MUST contain `url` (String), `sha256` (64-character hex hash for cryptographic integrity verification), and `mime_type` (String).
 
 ### Canonical Serialization for Signature Verification (RFC 8785):
 To generate or verify the Ed25519 signature:
@@ -90,21 +90,9 @@ To generate or verify the Ed25519 signature:
 
 ---
 
-## 3. Sovereign Declarative Space-Time (Past, Present & Future)
+## 3. Tracker Signaling Wire Protocol (WebSocket)
 
-A cornerstone of the Handshake protocol is that **both space and time are expressive, sovereign choices of the creator**:
-
-1. **Declarative Coordinates (Roots & Replies):** Leaving a message is intentional, akin to leaving a mark at a specific physical spot. Location is never passive tracking; it is an expressive, voluntary, and necessary choice. In replies as well as root messages, coordinates are sovereign and declarative: an author may anchor a reply at the exact location of the parent message, at their current physical coordinates (tracing an itinerant physical path), or at any coordinates chosen on the map.
-2. **Declarative Time (Writing to Future & Past):**
-   - **Future Anchors:** An author can anchor a message in a future timestamp (e.g., an invitation to a meet-up next Saturday, a time capsule, a prediction, or a scheduled announcement). The message will be discovered by peers exploring that future date on the temporal timeline.
-   - **Historical Anchors:** An author can anchor a message in a past timestamp (e.g., chronicling a historical event that occurred at that location).
-3. **No Artificial Rejection:** Swarm peers and trackers **do not reject** messages whose `timestamp` lies ahead of or behind the node's local system clock. Validity is determined solely by cryptographic Ed25519 signature integrity and canonical payload verification.
-
----
-
-## 4. Tracker Signaling Wire Protocol (WebSocket)
-
-The Space-Time Tracker serves exclusively as an ephemeral matchmaking and signaling coordinator. It maintains no centralized persistence of messages or user accounts; it connects peers exploring the same spatial zones (`geohash[:5]`, approx. 4.9 km × 4.9 km) to negotiate direct peer-to-peer transport.
+The Space-Time Tracker serves exclusively as an ephemeral matchmaking and signaling coordinator. It maintains no centralized persistence of messages or user accounts; it connects peers exploring the same spatial swarm cell (Geohash precision 5, approx. 4.9 km × 4.9 km) to negotiate direct peer-to-peer transport.
 
 **Endpoint:** `ws://<host>:<port>/ws/tracker/`
 
@@ -132,7 +120,7 @@ The tracker server verifies:
 2. `timestamp` is within an acceptable skew window ($\pm 120$ seconds) of server time to prevent replay attacks.
 3. `signature` is a valid detached Ed25519 signature of the challenge string for that `peer_id`.
 
-If authentication succeeds, the tracker registers or updates the peer in `ActivePeer`. If authentication fails or fields are missing/expired, the tracker returns an error payload and discards the registration:
+If authentication succeeds, the tracker registers or updates the peer in its active peer registry. If authentication fails or fields are missing/expired, the tracker returns an error payload and discards the registration:
 ```json
 {
   "type": "error",
@@ -143,7 +131,7 @@ If authentication succeeds, the tracker registers or updates the peer in `Active
 
 
 #### 2. Nearby Peer List (`peer_list`)
-Sent by the Tracker back to the registering client containing all active peers in the matching zone (`geohash[:5]`):
+Sent by the Tracker back to the registering client containing all active peers in the matching spatial swarm cell (Geohash precision 5):
 ```json
 {
   "type": "peer_list",
@@ -171,8 +159,8 @@ Broadcast by the Tracker to all active peers in the same spatial room when a pee
 }
 ```
 
-#### 4. WebRTC Signaling Relay (`signal`)
-Relayed transparently through the Tracker to negotiate direct P2P WebRTC data channels between peers:
+#### 4. Peer Connection Signaling Relay (`signal`)
+Relayed transparently as an opaque payload through the Tracker to negotiate direct P2P transport between peers (using standard WebRTC SDP offer/answer and ICE candidate schemas as the reference standard for browser swarms):
 ```json
 // SDP Offer / Answer
 {
@@ -202,7 +190,7 @@ Relayed transparently through the Tracker to negotiate direct P2P WebRTC data ch
 
 ---
 
-## 5. Direct Peer Synchronization Protocol (`strata-sync`)
+## 4. Direct Peer Synchronization Protocol (`strata-sync`)
 
 Once a direct peer connection is established (e.g. over a WebRTC RTCDataChannel labeled `"strata-sync"` in browser swarms, or local transport in proximity encounters), data exchange is demand-driven and governed by inventory negotiation.
 
@@ -220,8 +208,6 @@ Upon channel opening (`onopen`) or when a peer's viewport changes, the initiatin
   ]
 }
 ```
-
-*(Backward compatibility: clients also support receiving legacy `request_sync` containing `{"type": "request_sync", "geohash": "..."}`).*
 
 #### 2. Selective Missing Message Request (`request_missing`)
 The receiving peer compares the inventory against its local storage and requests only signatures it does not possess:
@@ -269,7 +255,7 @@ When a peer receives a `sync_response`:
 
 ---
 
-## 6. Swarm Grouping & InfoHash
+## 5. Swarm Grouping & InfoHash
 
 Messages are grouped into **spatial cells and temporal epochs**:
 
@@ -282,9 +268,9 @@ Messages are grouped into **spatial cells and temporal epochs**:
 
 ---
 
-## 7. Sovereign Storage, Metabolism, and Embedded DuckDB
+## 6. Sovereign Storage, Metabolism, and Relational Schema
 
-The protocol adopts **DuckDB** as the embedded database engine for Web clients (`@duckdb/duckdb-wasm` in IndexedDB) and desktop/server clients (`duckdb` in Python).
+Clients maintain sovereign local-first storage. The protocol defines a reference relational schema (standardized with SQL / DuckDB semantics) to specify table structures, indexing requirements, and automatic metabolism purges across client implementations.
 
 ### Database Schemas
 
@@ -319,7 +305,7 @@ CREATE TABLE IF NOT EXISTS trusted_handshakes (
 );
 ```
 
-### Core DuckDB Queries:
+### Reference Relational Queries (SQL / DuckDB):
 
 1. **Space-Time Retrieval for Map Viewport:**
    ```sql
@@ -361,7 +347,7 @@ CREATE TABLE IF NOT EXISTS trusted_handshakes (
 
 ---
 
-## 8. Spatial Conversation Threads
+## 7. Spatial Conversation Threads
 
 *   **Parent Linking (`parent_signature`):** Replying to a message includes the parent message's Ed25519 signature in the header.
 *   **Sovereign & Itinerant Replies:** Every reply is a sovereign space-time trace carrying its own declarative coordinates. An author may anchor a reply at the exact same location as the parent message, at their own physical location (tracing an itinerant physical path across the map), or at any arbitrary coordinates chosen across space.
