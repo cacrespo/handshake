@@ -82,13 +82,13 @@ describe("Canonical Stringification & Signing Data (SEC-01)", () => {
       version: "1.0",
       header: {
         author_pk: "207a067892821e25d770f1fba0c47c11ff4b813e54162ece9eb839e076231ab6",
-        timestamp: 1700000000,
         type: "PUBLIC",
         owner_pk: null,
         parent_signature: null,
         signature: "abcdef0123456789",
       },
-      location: {
+      anchor: {
+        timestamp: 1700000000,
         geohash: "6g3qc",
         proof: { type: "NONE", data: null },
       },
@@ -101,6 +101,7 @@ describe("Canonical Stringification & Signing Data (SEC-01)", () => {
 
     const parsed = JSON.parse(signingData);
     expect(parsed.header.signature).toBeUndefined();
+    expect(parsed.anchor.timestamp).toBe(1700000000);
     expect(parsed.content.text).toBe("Hello Strata from Web!");
   });
 });
@@ -116,10 +117,10 @@ describe("Message Signing & Verification", () => {
         author_pk: pubHex,
         owner_pk: null,
         parent_signature: null,
-        timestamp: 1700000000,
         type: "PUBLIC",
       },
-      location: {
+      anchor: {
+        timestamp: 1700000000,
         geohash: "6g3qc",
         proof: { data: null, type: "NONE" },
       },
@@ -149,12 +150,12 @@ describe("Message Signing & Verification", () => {
     // Tampering timestamp should fail verification
     const tamperedTimestamp = {
       ...signedMsg,
-      header: { ...signedMsg.header, timestamp: 1700000001 },
+      anchor: { ...signedMsg.anchor, timestamp: 1700000001 },
     };
     expect(verifyMessage(tamperedTimestamp)).toBe(false);
   });
 
-  it("signs and verifies messages using legacy 64-byte secret key", () => {
+  it("signs and verifies messages using 64-byte secret key", () => {
     const kp = loadKeyPair(seedHex);
     const msg = {
       version: "1.0",
@@ -162,14 +163,14 @@ describe("Message Signing & Verification", () => {
         author_pk: pubHex,
         owner_pk: null,
         parent_signature: null,
-        timestamp: 1700000000,
         type: "PUBLIC",
       },
-      location: {
+      anchor: {
+        timestamp: 1700000000,
         geohash: "6g3qc",
         proof: { data: null, type: "NONE" },
       },
-      content: { text: "Legacy key signing test" },
+      content: { text: "Secret key signing test" },
     };
 
     const sigHex = signMessage(msg, kp.secretKey);
@@ -182,6 +183,51 @@ describe("Message Signing & Verification", () => {
     };
 
     expect(verifyMessage(signedMsg)).toBe(true);
+  });
+
+  it("signs and verifies messages using new anchor schema and enforces closed schema and size limit", () => {
+    const msg = {
+      version: "1.0",
+      header: {
+        author_pk: pubHex,
+        owner_pk: null,
+        parent_signature: null,
+        type: "PUBLIC",
+      },
+      anchor: {
+        timestamp: 1712345678,
+        geohash: "69y7pg3",
+        coordinates: { lat: -34.6037, lon: -58.3816 },
+        proof: { data: "-34.6037,-58.3816", type: "GPS" },
+      },
+      content: { text: "Meeting at Obelisco" },
+    };
+
+    const sigHex = signMessage(msg, seedHex);
+    const signedMsg = {
+      ...msg,
+      header: {
+        ...msg.header,
+        signature: sigHex,
+      },
+    };
+
+    // Valid anchor-based message verifies
+    expect(verifyMessage(signedMsg)).toBe(true);
+
+    // Rejects unknown top-level field (closed schema enforcement)
+    const smuggledMsg = {
+      ...signedMsg,
+      malicious_trojan: "hidden_data_blob",
+    };
+    expect(verifyMessage(smuggledMsg)).toBe(false);
+
+    // Rejects message exceeding 64 KB limit
+    const hugeMsg = {
+      ...msg,
+      content: { text: "A".repeat(65 * 1024) },
+    };
+    expect(() => signMessage(hugeMsg, seedHex)).toThrow(/exceeds maximum size limit/);
   });
 });
 

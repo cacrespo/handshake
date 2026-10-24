@@ -3,26 +3,7 @@
 **Version:** `v0.2.0-draft` (Work in Progress)
 
 > [!NOTE]
-> This document represents the official technical specification of the Handshake protocol. It defines message schemas, cryptographic identity, sovereign storage, and wire protocols to ensure interoperability across clients (TypeScript Web frontend, mobile apps, and Python engine). For core non-negotiable invariants, see [Architectural Invariants](architecture-invariants.md).
-
----
-
-## Rationale and Core Philosophy
-
-### 1. The Vision
-Most traditional networks are centered around abstract digital identity: profiles, accounts, followers, and digital reputation metrics. In an environment where distinguishing between humans, bots, or synthetic identities is irrelevant or impossible in the virtual realm, **Handshake shifts the center of gravity from users to messages**.
-
-The network does not manage or validate virtual profiles. Instead, the system is a living landscape of **messages and digital graffitis anchored in exact space and time coordinates**.
-
-The fundamental unit of memory and value is the **space-time trace (the message)**, not user accounts, followers, or mandatory physical verification. Messages exist and circulate sovereignly based on their coordinates, cryptographic integrity, and the collective interest of nodes in seeding and preserving them.
-
-### 2. Protocol Goals and Philosophy
-*   **The Message as a Sovereign Unit:** There are no personal walls, inflated account follower counts, or algorithmic feeds. There are space-time graffitis. A message exists and retains value based on its location, content, and the collective interest in preserving it.
-*   **Location as an Expressive and Mandatory Anchor (Not Surveillance):** Location is never passive tracking or surveillance imposed on the user; it is an intentional, expressive, voluntary, and strictly necessary act. In Handshake, a message cannot exist without its space-time anchor.
-*   **Geography and Time as the Algorithm:** Visibility and discovery depend on geography and temporal moments. No attention optimization algorithms exist: to discover a digital trace, you must explore those coordinates.
-*   **Sovereign Space-Time Placement (Past, Present & Future):** Both location and timestamp are declarative, expressive choices of the author. An author can leave a message anchored right now, in the past (historical documentation), or in the future (future rendezvous, time capsules, announcements).
-*   **Custody and Collective Seeding (Data Sovereignty):** The network does not rely on a centralized proprietary server. Anyone can seed messages, freely deciding which spatial memory parts to preserve, replicate, or purge from local storage as historical custodians.
-*   **Optional Physical Presence & Proximity:** While the network operates globally across space-time swarms, local peer proximity (BLE) and in-person QR exchanges remain available as optional complementary tools for local contact verification and offline data exchange.
+> This document represents the official technical specification of the Handshake protocol. It defines message schemas, cryptographic identity, sovereign storage, and wire protocols to ensure interoperability across clients (TypeScript Web frontend, mobile apps, and Python engine). For core conceptual principles and non-negotiable architectural pillars, see [Architectural Invariants](architecture-invariants.md).
 
 ---
 
@@ -49,7 +30,7 @@ To enable sovereign import and export of keys between clients (Web, CLI, mobile)
 
 ## 2. Message Schema
 
-All messages on the network are public, open, and immutable. They are serialized and transmitted using strict JSON formatting. The schema consists of three primary blocks: `header`, `location`, and `content`.
+All messages on the network are public, open, and immutable. They are serialized and transmitted using strict JSON formatting. The schema consists of three primary blocks: `header` (cryptographic identity and thread graph), `anchor` (constitutive space-time anchor), and `content` (payload).
 
 ```json
 {
@@ -57,10 +38,10 @@ All messages on the network are public, open, and immutable. They are serialized
   "header": {
     "author_pk": "hex_public_key_32_bytes",
     "parent_signature": "hex_parent_signature_64_bytes_optional",
-    "timestamp": 1712345678,
     "signature": "hex_signature_64_bytes"
   },
-  "location": {
+  "anchor": {
+    "timestamp": 1712345678,
     "geohash": "dr5reg6",
     "coordinates": {
       "lat": 40.712776,
@@ -87,11 +68,11 @@ All messages on the network are public, open, and immutable. They are serialized
 ### Fields:
 *   `header.author_pk`: Ed25519 public key (64 hex characters / 32 bytes) of the signing author.
 *   `header.parent_signature` (Optional): Ed25519 signature of the parent message being replied to (`null` if initiating a new root conversation). Enables spatial conversation trees and graphs.
-*   `header.timestamp`: UNIX timestamp (seconds) when the message is anchored in time.
 *   `header.signature`: Ed25519 digital signature of the canonical serialized JSON object (excluding this signature field).
-*   `location.geohash`: Standard Geohash (precision 6 or 7) derived from coordinates, used to index and discover spatial peer swarms in the area.
-*   `location.coordinates`: High-precision geographical coordinates (`lat`, `lon`) for map rendering.
-*   `location.proof` (Optional): Spatial or co-presence proof (`type`: `"GPS"`, `"WITNESS_SWARM"`, or `"NONE"`).
+*   `anchor.timestamp`: UNIX timestamp (seconds) when the message is anchored in time.
+*   `anchor.geohash`: Standard Geohash (precision 6 or 7) derived from coordinates, used to index and discover spatial peer swarms in the area.
+*   `anchor.coordinates`: High-precision geographical coordinates (`lat`, `lon`) for map rendering.
+*   `anchor.proof` (Optional): Spatial or co-presence proof (`type`: `"GPS"`, `"WITNESS_SWARM"`, or `"NONE"`).
 *   `content.text`: Message text content (required, plain text or lightweight markdown).
 *   `content.attachments` (Optional): List of linked multimedia attachments. Each item contains `url`, `sha256` for cryptographic integrity verification, and `mime_type`.
 
@@ -101,9 +82,11 @@ To generate or verify the Ed25519 signature:
 2. Recursively sort all object keys in lexicographical (Unicode code point) order following the JSON Canonicalization Scheme (RFC 8785).
 3. Compactify the normalized JSON string without superfluous whitespace, encode as UTF-8, and sign/verify with the Ed25519 keypair.
 
-### Extensibility and Data Preservation:
-*   **Unknown Fields:** If a client receives a message containing unknown schema fields from newer protocol versions, it must ignore them during local rendering but **must preserve them intact** in local storage JSON files and during P2P swarm retransmission.
+### Security, Extensibility and Strict Schema Enforcement:
+*   **Strict Closed Schema (Zero Smuggling):** To prevent payload smuggling, trojan data carriers, tracking tokens, and botnet command injection, nodes enforce strict closed-schema validation under `version: "1.0"`. Any message containing unrecognized fields at the root or within sub-objects is malformed and **must be immediately rejected and discarded**.
+*   **Hard Message Size Limit:** The maximum allowable size for a serialized canonical message is **64 KB**. Messages exceeding this threshold are dropped at the transport boundary before signature parsing or cryptographic verification, preventing denial-of-service (DoS) and local storage bloat attacks.
 *   **Signature Immutability:** Modifying, omitting, or reordering any field invalidates the original Ed25519 signature.
+*   **Protocol Evolution:** Future extensions and additions require an explicit protocol version increment (e.g. `version: "1.1"` or `"2.0"`).
 
 ---
 
@@ -262,10 +245,10 @@ Sent in response to `request_missing` (delivering only requested messages), or b
       "header": {
         "author_pk": "7b8a1c...",
         "parent_signature": null,
-        "timestamp": 1787928000,
         "signature": "3f9c4a..."
       },
-      "location": {
+      "anchor": {
+        "timestamp": 1787928000,
         "geohash": "69y7pg3",
         "coordinates": { "lat": -34.6037, "lon": -58.3816 }
       },

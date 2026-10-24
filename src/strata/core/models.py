@@ -5,11 +5,14 @@ from typing import Any
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
+# Security constraint: Maximum allowed canonical message size (64 KB)
+MAX_MESSAGE_SIZE: int = 64 * 1024
+
 
 class Message:
     """
-    Represents a single 'trace' or message in the Strata ecosystem.
-    This is the 'DNA' of the system, designed to be serializable and verifiable.
+    Represents a single 'trace' or message in the Handshake ecosystem.
+    This is the sovereign space-time trace designed to be serializable and verifiable.
     """
 
     def __init__(
@@ -24,6 +27,7 @@ class Message:
         proof_type: str = "NONE",
         proof_data: str | None = None,
         signature: bytes | None = None,
+        attachments: list[dict[str, Any]] | None = None,
         extra: dict[str, Any] | None = None,
     ):
         self.author_pk = author_pk
@@ -36,10 +40,17 @@ class Message:
         self.proof_type = proof_type  # NONE, GPS, BT
         self.proof_data = proof_data
         self.signature = signature
+        self.attachments = attachments or []
         self.extra = extra or {}
 
     def to_dict(self) -> dict[str, Any]:
-        """Serializes the message for signing or storage."""
+        """Serializes the message for signing or storage according to the Handshake Protocol."""
+        content_data: dict[str, Any] = {"text": self.content}
+        if self.attachments:
+            content_data["attachments"] = self.attachments
+        elif self.extra and "attachments" in self.extra:
+            content_data["attachments"] = self.extra["attachments"]
+
         data = {
             "version": "1.0",
             "header": {
@@ -47,49 +58,45 @@ class Message:
                 "owner_pk": self.owner_pk.hex() if self.owner_pk else None,
                 "author_pk": self.author_pk.hex(),
                 "parent_signature": self.parent_signature.hex() if self.parent_signature else None,
-                "timestamp": int(self.timestamp),
             },
-            "location": {
+            "anchor": {
+                "timestamp": int(self.timestamp),
                 "geohash": self.geohash,
                 "proof": {"type": self.proof_type, "data": self.proof_data},
             },
-            "content": {"text": self.content},
+            "content": content_data,
         }
-
-        # Merge extra fields to preserve unrecognized metadata
-        if self.extra:
-            for k, v in self.extra.items():
-                if isinstance(v, dict) and k in data and isinstance(data[k], dict):
-                    # Deep merge dicts (like header, location, content, or custom top-level objects)
-                    data[k] = {**data[k], **v}
-                else:
-                    data[k] = v
         return data
 
     def get_signing_data(self) -> bytes:
-        """Returns the canonical JSON representation for signing."""
+        """Returns the canonical JSON representation for signing (RFC 8785)."""
         data = self.to_dict()
-        # We sign the whole structure except the signature field itself
+        # Sign the complete structure excluding header.signature
         if "header" in data and "signature" in data["header"]:
-            # Make a copy and delete signature key
             data = json.loads(json.dumps(data))
             data["header"].pop("signature", None)
-        return json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        signing_bytes = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        if len(signing_bytes) > MAX_MESSAGE_SIZE:
+            raise ValueError(f"Message exceeds maximum allowed size of {MAX_MESSAGE_SIZE} bytes")
+        return signing_bytes
 
     def sign(self, private_key: ed25519.Ed25519PrivateKey):
         """Signs the message using the author's private key."""
         self.signature = private_key.sign(self.get_signing_data())
 
     def verify(self) -> bool:
-        """Verifies the message signature."""
+        """Verifies the message signature and ensures payload does not exceed MAX_MESSAGE_SIZE."""
         if not self.signature:
             return False
         try:
+            signing_data = self.get_signing_data()
+            if len(signing_data) > MAX_MESSAGE_SIZE:
+                return False
             public_key = ed25519.Ed25519PublicKey.from_public_bytes(self.author_pk)
-            public_key.verify(self.signature, self.get_signing_data())
+            public_key.verify(self.signature, signing_data)
             return True
-        except InvalidSignature:
+        except (InvalidSignature, ValueError):
             return False
 
     def __repr__(self):
-        return f"<StrataMessage [{self.geohash}] {self.content[:20]}...>"
+        return f"<HandshakeMessage [{self.geohash}] {self.content[:20]}...>"

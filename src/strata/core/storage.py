@@ -189,52 +189,33 @@ class StorageManager:
                 with open(file_path, "r") as f:
                     data = json.load(f)
 
-                # Extract extra fields to preserve unrecognized metadata
-                import copy
-                extra = copy.deepcopy(data)
-                extra.pop("version", None)
-                if "header" in extra:
-                    extra["header"].pop("type", None)
-                    extra["header"].pop("owner_pk", None)
-                    extra["header"].pop("author_pk", None)
-                    extra["header"].pop("parent_signature", None)
-                    extra["header"].pop("timestamp", None)
-                    extra["header"].pop("signature", None)
-                    if not extra["header"]:
-                        extra.pop("header")
-                if "location" in extra:
-                    extra["location"].pop("geohash", None)
-                    if "proof" in extra["location"]:
-                        extra["location"]["proof"].pop("type", None)
-                        extra["location"]["proof"].pop("data", None)
-                        if not extra["location"]["proof"]:
-                            extra["location"].pop("proof")
-                    if not extra["location"]:
-                        extra.pop("location")
-                if "content" in extra:
-                    extra["content"].pop("text", None)
-                    if not extra["content"]:
-                        extra.pop("content")
+                # Validate core triad under closed schema
+                if "header" not in data or "anchor" not in data or "content" not in data:
+                    logger.warning(f"Malformed message in {file_path}: missing core triad")
+                    continue
 
-                # Reconstruct message
+                anchor_data = data["anchor"]
+                proof_data_block = anchor_data.get("proof") or {}
+                attachments_val = data.get("content", {}).get("attachments", [])
+
                 msg = Message(
                     author_pk=bytes.fromhex(data["header"]["author_pk"]),
-                    geohash=data["location"]["geohash"],
+                    geohash=anchor_data["geohash"],
                     content=data["content"]["text"],
-                    message_type=data["header"]["type"],
+                    message_type=data["header"].get("type", "PUBLIC"),
                     owner_pk=bytes.fromhex(data["header"]["owner_pk"])
-                    if data["header"]["owner_pk"]
+                    if data["header"].get("owner_pk")
                     else None,
                     parent_signature=bytes.fromhex(data["header"]["parent_signature"])
                     if data["header"].get("parent_signature")
                     else None,
-                    timestamp=data["header"]["timestamp"],
-                    proof_type=data["location"]["proof"]["type"],
-                    proof_data=data["location"]["proof"]["data"],
+                    timestamp=anchor_data["timestamp"],
+                    proof_type=proof_data_block.get("type", "NONE"),
+                    proof_data=proof_data_block.get("data"),
                     signature=bytes.fromhex(data["header"]["signature"])
-                    if data["header"]["signature"]
+                    if data["header"].get("signature")
                     else None,
-                    extra=extra,
+                    attachments=attachments_val,
                 )
 
                 if msg.verify():

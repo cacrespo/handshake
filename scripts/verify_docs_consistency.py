@@ -275,16 +275,22 @@ def check_message_schema_consistency(repo_root: Path) -> list[str]:
     doc_text = protocol_doc.read_text(encoding="utf-8") if protocol_doc.exists() else ""
 
     # Required structure in Message.to_dict():
-    required_blocks = ["version", "header", "location", "content"]
+    required_blocks = ["version", "header", "anchor", "content"]
     for block in required_blocks:
         if f'"{block}"' not in content:
             errors.append(f"Message serialization in models.py missing block '{block}'.")
 
     # Header fields
-    header_fields = ["author_pk", "parent_signature", "timestamp"]
+    header_fields = ["author_pk", "parent_signature"]
     for f in header_fields:
         if f'"{f}"' not in content:
             errors.append(f"Message header serialization in models.py missing field '{f}'.")
+
+    # Anchor fields
+    anchor_fields = ["geohash", "timestamp"]
+    for f in anchor_fields:
+        if f'"{f}"' not in content:
+            errors.append(f"Message anchor serialization in models.py missing field '{f}'.")
 
     # Check that documented JSON example in protocol.md includes the core blocks
     for block in required_blocks:

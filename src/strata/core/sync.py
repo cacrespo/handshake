@@ -387,20 +387,32 @@ class SyncEngine:
     def _handle_data(self, info_hash: str, msg_data: dict[str, Any]):
         logger.info(f"Received DATA for {info_hash}")
         try:
+            if "header" not in msg_data or "anchor" not in msg_data or "content" not in msg_data:
+                logger.warning(f"Discarding message with malformed schema: missing core triad")
+                return
+
+            anchor_data = msg_data["anchor"]
+            proof_data_block = anchor_data.get("proof") or {}
+            attachments_val = msg_data.get("content", {}).get("attachments", [])
+
             msg = Message(
                 author_pk=bytes.fromhex(msg_data["header"]["author_pk"]),
-                geohash=msg_data["location"]["geohash"],
+                geohash=anchor_data["geohash"],
                 content=msg_data["content"]["text"],
-                message_type=msg_data["header"]["type"],
+                message_type=msg_data["header"].get("type", "PUBLIC"),
                 owner_pk=bytes.fromhex(msg_data["header"]["owner_pk"])
-                if msg_data["header"]["owner_pk"]
+                if msg_data["header"].get("owner_pk")
                 else None,
-                timestamp=msg_data["header"]["timestamp"],
-                proof_type=msg_data["location"]["proof"]["type"],
-                proof_data=msg_data["location"]["proof"]["data"],
+                parent_signature=bytes.fromhex(msg_data["header"]["parent_signature"])
+                if msg_data["header"].get("parent_signature")
+                else None,
+                timestamp=anchor_data["timestamp"],
+                proof_type=proof_data_block.get("type", "NONE"),
+                proof_data=proof_data_block.get("data"),
                 signature=bytes.fromhex(msg_data["header"]["signature"])
-                if msg_data["header"]["signature"]
+                if msg_data["header"].get("signature")
                 else None,
+                attachments=attachments_val,
             )
             if msg.verify():
                 self.storage.save_message(info_hash, msg)
