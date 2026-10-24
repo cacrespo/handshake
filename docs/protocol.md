@@ -248,10 +248,11 @@ Sent in response to `request_missing` (delivering only requested messages), or b
 
 #### 4. Ingestion & Zero-Trust Cryptographic Verification Pipeline:
 When a peer receives a `sync_response`:
-1. It iterates through each message in `graffitis`.
-2. Reconstructs the canonical JSON payload (excluding `header.signature`) according to RFC 8785.
-3. Verifies the Ed25519 signature against `header.author_pk`.
-4. If valid, ingests the message into sovereign local storage and updates visual views. Untrusted or tampered messages are immediately discarded.
+1. **Size Boundary Check:** Discards immediately any message payload exceeding the hard limit of 64 KB before parsing.
+2. **Strict Schema Check:** Verifies that the JSON strictly contains the core triad (`header`, `anchor`, `content`) without unauthorized fields.
+3. **Canonical Reconstruction:** Reconstructs the canonical JSON payload (excluding `header.signature`) according to RFC 8785.
+4. **Signature Verification:** Verifies the detached Ed25519 signature against `header.author_pk`.
+5. **Storage Ingestion:** If valid, ingests the message into sovereign local storage and updates visual views. Untrusted, malformed, or tampered messages are immediately discarded.
 
 ---
 

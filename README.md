@@ -55,3 +55,4 @@ graph TD
 
 - [Architectural Invariants](docs/architecture-invariants.md): Foundational invariants for identity, space-time anchoring, topology, storage, and P2P sync.
 - [Protocol Specification](docs/protocol.md): Full technical specification covering message schemas, signaling, and data synchronization.
+- [Development & Testing Guide](docs/DEVELOPMENT.md): Local environment setup, running the Tracker & Web client, running test suites, and P2P synchronization verification.
