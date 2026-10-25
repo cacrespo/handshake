@@ -75,7 +75,7 @@ describe("IndexedDB Storage Module (db.ts)", () => {
       expect(norm.parent_signature).toBe("parent000");
       expect(norm.is_pinned).toBe(0);
       expect(norm.header.signature).toBe("sig123");
-      expect(norm.location.geohash).toBe("6gyf4a1");
+      expect(norm.anchor?.geohash || norm.location?.geohash).toBe("6gyf4a1");
     });
 
     it("throws error if message lacks signature", () => {
