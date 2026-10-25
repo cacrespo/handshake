@@ -34,7 +34,7 @@ def test_signing_data_canonicalization_no_whitespace():
     assert parsed["version"] == "1.0"
     assert parsed["content"]["text"] == "Hello Strata Canonical Test!"
     assert parsed["header"]["author_pk"] == EXPECTED_PUBKEY_HEX
-    assert parsed["header"]["timestamp"] == 1700000000
+    assert parsed["anchor"]["timestamp"] == 1700000000
     assert "signature" not in parsed["header"]
 
 
@@ -146,10 +146,10 @@ def test_end_to_end_bidirectional_signature_verification():
             type: 'PUBLIC',
             owner_pk: null,
             author_pk: Buffer.from(kp.publicKey).toString('hex'),
-            parent_signature: null,
-            timestamp: 1712345678
+            parent_signature: null
         }},
-        location: {{
+        anchor: {{
+            timestamp: 1712345678,
             geohash: '69y7p',
             proof: {{ type: 'GPS', data: '-34.608300,-58.371200' }}
         }},
@@ -168,11 +168,11 @@ def test_end_to_end_bidirectional_signature_verification():
 
     py_msg = Message(
         author_pk=bytes.fromhex(web_msg_data["header"]["author_pk"]),
-        geohash=web_msg_data["location"]["geohash"],
+        geohash=web_msg_data["anchor"]["geohash"],
         content=web_msg_data["content"]["text"],
-        timestamp=web_msg_data["header"]["timestamp"],
-        proof_type=web_msg_data["location"]["proof"]["type"],
-        proof_data=web_msg_data["location"]["proof"]["data"],
+        timestamp=web_msg_data["anchor"]["timestamp"],
+        proof_type=web_msg_data["anchor"]["proof"]["type"],
+        proof_data=web_msg_data["anchor"]["proof"]["data"],
         signature=bytes.fromhex(web_msg_data["header"]["signature"]),
     )
 

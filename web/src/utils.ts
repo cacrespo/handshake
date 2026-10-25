@@ -34,7 +34,7 @@ export interface RequestSyncMessage {
 
 export interface SyncResponseMessage {
   type: "sync_response";
-  graffitis: any[];
+  messages: any[];
 }
 
 export type DataChannelMessage = RequestSyncMessage | SyncResponseMessage;
@@ -54,7 +54,7 @@ export function isValidSyncResponse(data: unknown): data is SyncResponseMessage 
     typeof data === "object" &&
     data !== null &&
     (data as any).type === "sync_response" &&
-    Array.isArray((data as any).graffitis)
+    Array.isArray((data as any).messages)
   );
 }
 
@@ -189,6 +189,24 @@ export function canonicalStringify(obj: any): string {
   return "{" + pairs.join(",") + "}";
 }
 
+export const MAX_MESSAGE_SIZE_BYTES = 64 * 1024; // 64 KB
+
+export function getMessageTimestamp(msg: any): number {
+  return msg?.anchor?.timestamp ?? 0;
+}
+
+export function getMessageGeohash(msg: any): string {
+  return msg?.anchor?.geohash ?? "";
+}
+
+export function getMessageCoordinates(msg: any): { lat: number; lon: number } | null {
+  if (msg?.anchor?.coordinates && typeof msg.anchor.coordinates.lat === "number") {
+    return msg.anchor.coordinates;
+  }
+  const gh = getMessageGeohash(msg);
+  return gh ? decodeGeohash(gh) : null;
+}
+
 export function getSigningData(msg: any): string {
   // Deep clone to avoid mutating input and strip header.signature
   const data = JSON.parse(JSON.stringify(msg));
@@ -202,15 +220,33 @@ export function signMessage(msg: any, secretKey: Uint8Array | string): string {
   const keyPair = loadKeyPair(secretKey);
   const signingData = getSigningData(msg);
   const dataBytes = utf8ToBytes(signingData);
+  if (dataBytes.length > MAX_MESSAGE_SIZE_BYTES) {
+    throw new Error(`Message exceeds maximum size limit of ${MAX_MESSAGE_SIZE_BYTES} bytes`);
+  }
   const sigBytes = nacl.sign.detached(dataBytes, keyPair.secretKey);
   return toHex(sigBytes);
 }
 
 export function verifyMessage(msg: any): boolean {
-  if (!msg || !msg.header || !msg.header.signature || !msg.header.author_pk) return false;
+  if (!msg || !msg.header || !msg.anchor || !msg.content || !msg.header.signature || !msg.header.author_pk) {
+    return false;
+  }
   try {
+    // Closed schema check: ensure strictly allowed top-level keys
+    const allowedKeys = new Set(["version", "header", "anchor", "content"]);
+    for (const k of Object.keys(msg)) {
+      if (!allowedKeys.has(k)) {
+        console.warn("Message rejected: unrecognized top-level field:", k);
+        return false;
+      }
+    }
+
     const signingData = getSigningData(msg);
     const dataBytes = utf8ToBytes(signingData);
+    if (dataBytes.length > MAX_MESSAGE_SIZE_BYTES) {
+      console.warn("Message rejected: exceeds maximum size limit (64 KB):", dataBytes.length);
+      return false;
+    }
     const signatureBytes = fromHex(msg.header.signature);
     const publicKeyBytes = fromHex(msg.header.author_pk);
     return nacl.sign.detached.verify(dataBytes, signatureBytes, publicKeyBytes);

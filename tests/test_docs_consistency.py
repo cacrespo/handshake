@@ -235,8 +235,8 @@ def test_check_message_schema_consistency(tmp_path):
         """
         data = {
             "version": "1.0",
-            "header": {"author_pk": "abc", "parent_signature": "def", "timestamp": 123},
-            "location": {"geohash": "123"},
+            "header": {"author_pk": "abc", "parent_signature": "def"},
+            "anchor": {"geohash": "123", "timestamp": 123},
             "content": {"text": "hello"},
         }
         """,
@@ -249,7 +249,7 @@ def test_check_message_schema_consistency(tmp_path):
         {
           "version": "1.0",
           "header": {},
-          "location": {},
+          "anchor": {},
           "content": {}
         }
         ```

@@ -29,7 +29,9 @@ import {
   getSeedFromKeyPair,
   exportKeyData,
   utf8ToBytes,
-  signTrackerRegistration
+  signTrackerRegistration,
+  getMessageTimestamp,
+  getMessageGeohash
 } from "./utils";
 
 
@@ -228,7 +230,8 @@ export default function App() {
   const getComposerActiveCoords = (): [number, number] => {
     if (composerLocationMode === "parent" && replyingTo) {
       try {
-        const decoded = decodeGeohash(replyingTo.location.geohash);
+        const gh = getMessageGeohash(replyingTo);
+        const decoded = decodeGeohash(gh);
         return [decoded.lat, decoded.lon];
       } catch (e) {
         return coords;
@@ -590,7 +593,7 @@ export default function App() {
       }
     };
 
-    const dc = pc.createDataChannel("strata-sync");
+    const dc = pc.createDataChannel("handshake-sync");
     setupDataChannel(targetPeerId, dc);
     dataChannels.current[targetPeerId] = dc;
 
@@ -741,19 +744,19 @@ export default function App() {
           }
           const targetPrefix = data.geohash.substring(0, 5);
           const filtered = localGraffitisRef.current.filter(g => 
-            g && g.location && typeof g.location.geohash === "string" && g.location.geohash.startsWith(targetPrefix)
+            g && getMessageGeohash(g).startsWith(targetPrefix)
           );
           dc.send(JSON.stringify({
             type: "sync_response",
-            graffitis: filtered
+            messages: filtered
           }));
-          addLog(`[P2P] Sent ${filtered.length} local graffitis to peer.`, "info");
+          addLog(`[P2P] Sent ${filtered.length} local messages to peer.`, "info");
         } else if (data.type === "sync_response") {
-          if (!Array.isArray(data.graffitis)) {
-            console.warn(`[P2P] Discarding sync_response with non-array graffitis from peer ${peerId}`);
+          const incoming = data.messages || data.graffitis;
+          if (!Array.isArray(incoming)) {
+            console.warn(`[P2P] Discarding sync_response with non-array messages from peer ${peerId}`);
             return;
           }
-          const incoming = data.graffitis;
           let addedCount = 0;
           
           setRemoteGraffitis(prev => {
@@ -805,10 +808,14 @@ export default function App() {
         owner_pk: null,
         author_pk: publicKey,
         parent_signature: replyingTo ? replyingTo.header.signature : null,
-        timestamp: targetTimestamp
       },
-      location: {
+      anchor: {
+        timestamp: targetTimestamp,
         geohash: activeComposerGeohash,
+        coordinates: {
+          lat: Number(activeComposerCoords[0].toFixed(6)),
+          lon: Number(activeComposerCoords[1].toFixed(6))
+        },
         proof: {
           type: "GPS",
           data: `${activeComposerCoords[0].toFixed(6)},${activeComposerCoords[1].toFixed(6)}`
@@ -844,7 +851,7 @@ export default function App() {
       if (dc.readyState === "open") {
         dc.send(JSON.stringify({
           type: "sync_response",
-          graffitis: [fullySignedMessage]
+          messages: [fullySignedMessage]
         }));
       }
     });
@@ -884,16 +891,18 @@ export default function App() {
     }
 
     try {
-      const dt = new Date(graf.header.timestamp * 1000);
+      const grafTs = getMessageTimestamp(graf);
+      const grafGh = getMessageGeohash(graf);
+      const dt = new Date(grafTs * 1000);
       const epoch = `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}`; // YYYY-MM
-      const baseStr = `${graf.location.geohash}:${epoch}`;
+      const baseStr = `${grafGh}:${epoch}`;
       const data = new TextEncoder().encode(baseStr);
       const hashBuffer = await crypto.subtle.digest("SHA-1", data);
       const infoHashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
       
       // Get or create info_hash subdirectory
       const subDirHandle = await folderHandle.getDirectoryHandle(infoHashHex, { create: true });
-      const filename = `${graf.header.timestamp}_${graf.header.author_pk.substring(0, 8)}.msg`;
+      const filename = `${grafTs}_${graf.header.author_pk.substring(0, 8)}.msg`;
       
       const fileHandle = await subDirHandle.getFileHandle(filename, { create: true });
       const writable = await fileHandle.createWritable();
@@ -921,17 +930,18 @@ export default function App() {
     const list: GlobeMarker[] = [];
     allGraffitis.forEach((g, idx) => {
       try {
-        const gCoords = decodeGeohash(g.location.geohash);
+        const gh = getMessageGeohash(g);
+        const gCoords = decodeGeohash(gh);
         const isLocal = localGraffitis.some(lg => lg.header.signature === g.header.signature);
         const isTrusted = trustedAuthors.includes(g.header.author_pk);
         list.push({
           id: g.header.signature || `g-${idx}`,
           lat: gCoords.lat,
           lon: gCoords.lon,
-          geohash: g.location.geohash,
+          geohash: gh,
           text: g.content?.text || "",
           author: g.header.author_pk || "Unknown",
-          timestamp: g.header.timestamp || 0,
+          timestamp: getMessageTimestamp(g),
           isLocal,
           isTrusted,
           raw: g
@@ -948,7 +958,8 @@ export default function App() {
     // 1. Filtro temporal (a menos que se active "Ver todos los días")
     if (!viewAllDays) {
       const dayRange = getDayRange(dayOffset);
-      if (g.header.timestamp < dayRange.start || g.header.timestamp > dayRange.end) {
+      const ts = getMessageTimestamp(g);
+      if (ts < dayRange.start || ts > dayRange.end) {
         return false;
       }
     }
@@ -959,7 +970,7 @@ export default function App() {
     if (isLocallyOwned || isLocallyStored) return true;
 
     try {
-      const gCoords = decodeGeohash(g.location.geohash);
+      const gCoords = decodeGeohash(getMessageGeohash(g));
       const distance = getDistance(coords[0], coords[1], gCoords.lat, gCoords.lon);
       const isTrusted = trustedAuthors.includes(g.header.author_pk);
       const visibilityRadius = isTrusted ? 1000 : 200; // 1km if trusted (Handshake Multiplier), 200m if not
@@ -989,9 +1000,9 @@ export default function App() {
       }
     });
     // Sort roots by timestamp
-    roots.sort((a, b) => a.header.timestamp - b.header.timestamp);
+    roots.sort((a, b) => getMessageTimestamp(a) - getMessageTimestamp(b));
     const sortReplies = (node: any) => {
-      node.replies.sort((a: any, b: any) => a.header.timestamp - b.header.timestamp);
+      node.replies.sort((a: any, b: any) => getMessageTimestamp(a) - getMessageTimestamp(b));
       node.replies.forEach(sortReplies);
     };
     roots.forEach(sortReplies);
@@ -1002,9 +1013,11 @@ export default function App() {
   const ThreadedCard = ({ node, depth = 0 }: { node: any; depth: number }) => {
     const isLocal = localGraffitis.some(g => g.header.signature === node.header.signature);
     const isTrusted = trustedAuthors.includes(node.header.author_pk);
-    const gCoords = decodeGeohash(node.location.geohash);
+    const nodeGh = getMessageGeohash(node);
+    const gCoords = decodeGeohash(nodeGh);
     const dist = getDistance(coords[0], coords[1], gCoords.lat, gCoords.lon);
     const avatar = getAuthorAvatar(node.header.author_pk);
+    const nodeTs = getMessageTimestamp(node);
 
     return (
       <div style={{ 
@@ -1037,7 +1050,7 @@ export default function App() {
                 {dist < 1000 ? `${dist.toFixed(0)}m` : `${(dist / 1000).toFixed(1)}km`}
               </span>
               <span className="card-time" style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                {new Date(node.header.timestamp * 1000).toLocaleTimeString([], {hour: "2-digit", minute:"2-digit"})}
+                {new Date(nodeTs * 1000).toLocaleTimeString([], {hour: "2-digit", minute:"2-digit"})}
               </span>
             </div>
           </div>
@@ -1048,7 +1061,7 @@ export default function App() {
 
           <div className="card-footer" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px" }}>
             <span className="card-geohash" style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-              Geohash: <code style={{ color: "var(--neon-cyan)" }}>{node.location.geohash.substring(0, 7)}</code>
+              Geohash: <code style={{ color: "var(--neon-cyan)" }}>{nodeGh.substring(0, 7)}</code>
             </span>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               {node.header.author_pk !== publicKey && (
@@ -1112,9 +1125,9 @@ export default function App() {
             <span>Celda: <code>{geohash.substring(0, 7)}</code></span>
           </div>
 
-          <div className="hud-pill" title="Estado de sincronización Strata-Sync">
+          <div className="hud-pill" title="Estado de sincronización Handshake-Sync">
             <Activity size={12} style={{ color: wsStatus === "connected" ? "var(--neon-emerald)" : "var(--neon-amber)" }} />
-            <span>Strata-Sync: <code style={{ color: wsStatus === "connected" ? "var(--neon-emerald)" : "var(--neon-amber)" }}>{wsStatus === "connected" ? "Live" : "Standby"}</code></span>
+            <span>Handshake-Sync: <code style={{ color: wsStatus === "connected" ? "var(--neon-emerald)" : "var(--neon-amber)" }}>{wsStatus === "connected" ? "Live" : "Standby"}</code></span>
           </div>
 
           {/* View Mode Switcher */}
@@ -1386,7 +1399,9 @@ export default function App() {
             {filteredGraffitis.map((graf, idx) => {
               try {
                 const isLocal = localGraffitis.some(g => g.header.signature === graf.header.signature);
-                const grafCoords = decodeGeohash(graf.location.geohash);
+                const grafGh = getMessageGeohash(graf);
+                const grafCoords = decodeGeohash(grafGh);
+                const grafTs = getMessageTimestamp(graf);
                 const isTrusted = trustedAuthors.includes(graf.header.author_pk);
                 const typeClass = isTrusted ? 'trusted' : isLocal ? 'local' : 'remote';
                 
@@ -1416,8 +1431,8 @@ export default function App() {
                         <p className="popup-text">"{graf.content.text}"</p>
                         <div className="popup-details">
                           <span><strong>Autor:</strong> <code>{graf.header.author_pk.substring(0, 8)}...</code></span>
-                          <span><strong>Fecha:</strong> {new Date(graf.header.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({new Date(graf.header.timestamp * 1000).toLocaleDateString()})</span>
-                          <span><strong>Geohash:</strong> <code>{graf.location.geohash}</code></span>
+                          <span><strong>Fecha:</strong> {new Date(grafTs * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({new Date(grafTs * 1000).toLocaleDateString()})</span>
+                          <span><strong>Geohash:</strong> <code>{grafGh}</code></span>
                         </div>
                         <div className="popup-actions">
                           {graf.header.author_pk !== publicKey && (
@@ -1779,8 +1794,8 @@ export default function App() {
                             <div key={i} className="graffiti-item">
                               <div className="graffiti-content">"{g.content.text}"</div>
                               <div className="graffiti-meta">
-                                <span>{g.location.geohash.substring(0, 7)}</span>
-                                <span>{new Date(g.header.timestamp * 1000).toLocaleDateString()}</span>
+                                <span>{getMessageGeohash(g).substring(0, 7)}</span>
+                                <span>{new Date(getMessageTimestamp(g) * 1000).toLocaleDateString()}</span>
                               </div>
                             </div>
                           ))}

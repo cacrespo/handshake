@@ -3,26 +3,7 @@
 **Version:** `v0.2.0-draft` (Work in Progress)
 
 > [!NOTE]
-> This document represents the official technical specification of the Handshake protocol. It defines message schemas, cryptographic identity, sovereign storage, and wire protocols to ensure interoperability across clients (TypeScript Web frontend, mobile apps, and Python engine). For core non-negotiable invariants, see [Architectural Invariants](architecture-invariants.md).
-
----
-
-## Rationale and Core Philosophy
-
-### 1. The Vision
-Most traditional networks are centered around abstract digital identity: profiles, accounts, followers, and digital reputation metrics. In an environment where distinguishing between humans, bots, or synthetic identities is irrelevant or impossible in the virtual realm, **Handshake shifts the center of gravity from users to messages**.
-
-The network does not manage or validate virtual profiles. Instead, the system is a living landscape of **messages and digital graffitis anchored in exact space and time coordinates**.
-
-The fundamental unit of memory and value is the **space-time trace (the message)**, not user accounts, followers, or mandatory physical verification. Messages exist and circulate sovereignly based on their coordinates, cryptographic integrity, and the collective interest of nodes in seeding and preserving them.
-
-### 2. Protocol Goals and Philosophy
-*   **The Message as a Sovereign Unit:** There are no personal walls, inflated account follower counts, or algorithmic feeds. There are space-time graffitis. A message exists and retains value based on its location, content, and the collective interest in preserving it.
-*   **Location as an Expressive and Mandatory Anchor (Not Surveillance):** Location is never passive tracking or surveillance imposed on the user; it is an intentional, expressive, voluntary, and strictly necessary act. In Handshake, a message cannot exist without its space-time anchor.
-*   **Geography and Time as the Algorithm:** Visibility and discovery depend on geography and temporal moments. No attention optimization algorithms exist: to discover a digital trace, you must explore those coordinates.
-*   **Sovereign Space-Time Placement (Past, Present & Future):** Both location and timestamp are declarative, expressive choices of the author. An author can leave a message anchored right now, in the past (historical documentation), or in the future (future rendezvous, time capsules, announcements).
-*   **Custody and Collective Seeding (Data Sovereignty):** The network does not rely on a centralized proprietary server. Anyone can seed messages, freely deciding which spatial memory parts to preserve, replicate, or purge from local storage as historical custodians.
-*   **Optional Physical Presence & Proximity:** While the network operates globally across space-time swarms, local peer proximity (BLE) and in-person QR exchanges remain available as optional complementary tools for local contact verification and offline data exchange.
+> This document represents the official technical specification of the Handshake protocol. It defines message schemas, cryptographic identity, sovereign storage models, and wire protocols to ensure interoperability across heterogeneous clients (web frontends, native daemons, and mobile implementations). For core conceptual principles and non-negotiable architectural pillars, see [Architectural Invariants](architecture-invariants.md).
 
 ---
 
@@ -31,25 +12,25 @@ The fundamental unit of memory and value is the **space-time trace (the message)
 The protocol does not implement "user accounts", "registrations", or "profiles". Identity in Handshake is purely cryptographic, decentralized, and message-signature oriented:
 
 *   **Ed25519 Keypairs:** Every node or author uses an Ed25519 asymmetric keypair:
-    *   **Private Key (SK):** Local secret to digitally sign published graffitis. Stored strictly in client storage.
+    *   **Private Key (SK):** Local secret to digitally sign published messages. Stored strictly in client storage.
     *   **Public Key (PK):** Author identifier (`author_pk`) used by the P2P swarm to verify message integrity and authenticity, ensuring it was not tampered with during transport.
 *   **Optional Pseudonymity:** Users can reuse keypairs for author consistency or generate ephemeral keys for isolated messages. The protocol does not link names, emails, or personal data to any key.
 
 ### Portable Identity Format (`.key`):
-To enable sovereign import and export of keys between clients (Web, CLI, mobile) without server dependency:
+To enable sovereign import and export of keys between clients without server dependency:
 ```json
 {
   "public_key": "hexadecimal_public_key_64_characters",
   "private_key": "hexadecimal_private_seed_64_characters"
 }
 ```
-*Standardized on a 32-byte private seed (64 hex characters) when exporting. For backward compatibility, clients also accept legacy 64-byte secret keys (128 hex characters) during import.*
+*Standardized on a 32-byte private seed (64 hexadecimal characters).*
 
 ---
 
 ## 2. Message Schema
 
-All graffitis on the network are public, open, and immutable. They are serialized and transmitted using strict JSON formatting. The schema consists of three primary blocks: `header`, `location`, and `content`.
+All messages on the network are public, open, and immutable. They are serialized and transmitted using strict JSON formatting. The schema consists of three primary blocks: `header` (cryptographic identity and thread graph), `anchor` (constitutive space-time anchor), and `content` (payload).
 
 ```json
 {
@@ -57,10 +38,10 @@ All graffitis on the network are public, open, and immutable. They are serialize
   "header": {
     "author_pk": "hex_public_key_32_bytes",
     "parent_signature": "hex_parent_signature_64_bytes_optional",
-    "timestamp": 1712345678,
     "signature": "hex_signature_64_bytes"
   },
-  "location": {
+  "anchor": {
+    "timestamp": 1712345678,
     "geohash": "dr5reg6",
     "coordinates": {
       "lat": 40.712776,
@@ -84,44 +65,34 @@ All graffitis on the network are public, open, and immutable. They are serialize
 }
 ```
 
-### Fields:
-*   `header.author_pk`: Ed25519 public key (64 hex characters / 32 bytes) of the signing author.
-*   `header.parent_signature` (Optional): Ed25519 signature of the parent graffiti being replied to (`null` if initiating a new root conversation). Enables spatial conversation trees and graphs.
-*   `header.timestamp`: UNIX timestamp (seconds) when the graffiti is anchored in time.
-*   `header.signature`: Ed25519 digital signature of the canonical serialized JSON object (excluding this signature field).
-*   `location.geohash`: Standard Geohash (precision 6 or 7) used to index and discover spatial peer swarms in the area.
-*   `location.coordinates`: High-precision geographical coordinates (`lat`, `lon`) for map rendering.
-*   `location.proof` (Optional): Spatial or co-presence proof (`type`: `"GPS"`, `"WITNESS_SWARM"`, or `"NONE"`).
-*   `content.text`: Message text content (required, plain text or lightweight markdown).
-*   `content.attachments` (Optional): List of linked multimedia attachments. Each item contains `url`, `sha256` for cryptographic integrity verification, and `mime_type`.
+### Fields and Technical Validation Rules:
+*   `header.author_pk` (String, Required): 64-character hexadecimal representation of the author's 32-byte Ed25519 public key. Nodes MUST verify that it decodes to exactly 32 bytes and represents a valid Ed25519 curve point.
+*   `header.parent_signature` (String | null, Optional): 128-character hexadecimal string representing the Ed25519 signature of the parent message being replied to (`null` if initiating a new root conversation). Nodes use this field to construct conversation trees without enforcing that author or location match the parent message.
+*   `header.signature` (String, Required): 128-character hexadecimal Ed25519 signature computed over the canonical serialized JSON payload (RFC 8785) excluding this field itself.
+*   `anchor.timestamp` (Integer, Required): 64-bit signed integer UNIX timestamp (seconds). **Validation Rule:** Nodes and trackers MUST NOT reject messages based on clock skew or future/past offsets (declarative time). Validity is governed solely by cryptographic signature integrity over the canonical payload.
+*   `anchor.geohash` (String, Required): Canonical Geohash string (precision 6 or 7) derived from coordinates. Nodes MUST verify that `anchor.geohash` matches the geographic bounds of `anchor.coordinates`.
+*   `anchor.coordinates` (Object, Required): High-precision geographical coordinates containing `lat` (Float between `-90.0` and `+90.0`) and `lon` (Float between `-180.0` and `+180.0`). In both root messages and conversation replies, coordinates are sovereign and declarative (replies are not required to share the parent's coordinates).
+*   `anchor.proof` (Object, Optional): Cryptographic co-presence or spatial proof (`type`: `"GPS"`, `"WITNESS_SWARM"`, or `"NONE"`).
+*   `content.text` (String, Required): UTF-8 message text content (plain text or lightweight markdown).
+*   `content.attachments` (Array of Objects, Optional): List of linked multimedia attachments. Each item MUST contain `url` (String), `sha256` (64-character hex hash for cryptographic integrity verification), and `mime_type` (String).
 
-### Canonical Serialization for Signature Verification:
+### Canonical Serialization for Signature Verification (RFC 8785):
 To generate or verify the Ed25519 signature:
 1. Take the message JSON object **excluding the `header.signature` field**.
-2. Recursively sort all object keys alphabetically (`sort_keys=True` in Python / alphabetical object property sorting in TypeScript).
+2. Recursively sort all object keys in lexicographical (Unicode code point) order following the JSON Canonicalization Scheme (RFC 8785).
 3. Compactify the normalized JSON string without superfluous whitespace, encode as UTF-8, and sign/verify with the Ed25519 keypair.
 
-### Extensibility and Data Preservation:
-*   **Unknown Fields:** If a client receives a message containing unknown schema fields from newer protocol versions, it must ignore them during local rendering but **must preserve them intact** in local storage JSON files and during P2P swarm retransmission.
+### Security, Extensibility and Strict Schema Enforcement:
+*   **Strict Closed Schema (Zero Smuggling):** To prevent payload smuggling, trojan data carriers, tracking tokens, and botnet command injection, nodes enforce strict closed-schema validation under `version: "1.0"`. Any message containing unrecognized fields at the root or within sub-objects is malformed and **must be immediately rejected and discarded**.
+*   **Hard Message Size Limit:** The maximum allowable size for a serialized canonical message is **64 KB**. Messages exceeding this threshold are dropped at the transport boundary before signature parsing or cryptographic verification, preventing denial-of-service (DoS) and local storage bloat attacks.
 *   **Signature Immutability:** Modifying, omitting, or reordering any field invalidates the original Ed25519 signature.
+*   **Protocol Evolution:** Future extensions and additions require an explicit protocol version increment (e.g. `version: "1.1"` or `"2.0"`).
 
 ---
 
-## 3. Sovereign Declarative Space-Time (Past, Present & Future)
+## 3. Tracker Signaling Wire Protocol (WebSocket)
 
-A cornerstone of the Handshake protocol is that **both space and time are expressive, sovereign choices of the creator**:
-
-1. **Declarative Coordinates (Roots & Replies):** Leaving a graffiti is intentional, akin to painting a specific physical wall. Location is never passive tracking; it is an expressive, voluntary, and necessary choice. In replies as well as root messages, coordinates are sovereign and declarative: an author may anchor a reply at the exact location of the parent graffiti, at their current physical location, or at any coordinates chosen on the map.
-2. **Declarative Time (Writing to Future & Past):**
-   - **Future Graffitis:** An author can anchor a message in a future timestamp (e.g., an invitation to a physical meet-up next Saturday, a time capsule, a prediction, or a scheduled announcement). The message will be discovered by peers exploring that future date on the temporal timeline.
-   - **Historical Anchors:** An author can anchor a message in a past timestamp (e.g., chronicling a historical event that occurred at that location).
-3. **No Artificial Rejection:** Swarm peers and trackers **do not reject** messages whose `timestamp` lies ahead of or behind the node's local system clock. Validity is determined solely by cryptographic Ed25519 signature integrity and canonical payload verification.
-
----
-
-## 4. Tracker Signaling Wire Protocol (WebSocket)
-
-The Django Space-Time Tracker serves exclusively as a decentralized matchmaking and signaling server. It does not store messages or track user accounts; it connects peers interested in the same spatial zones (`geohash[:5]`, approx. 4.9 km × 4.9 km).
+The Space-Time Tracker serves exclusively as an ephemeral matchmaking and signaling coordinator. It maintains no centralized persistence of messages or user accounts; it connects peers exploring the same spatial swarm cell (Geohash precision 5, approx. 4.9 km × 4.9 km) to negotiate direct peer-to-peer transport.
 
 **Endpoint:** `ws://<host>:<port>/ws/tracker/`
 
@@ -149,7 +120,7 @@ The tracker server verifies:
 2. `timestamp` is within an acceptable skew window ($\pm 120$ seconds) of server time to prevent replay attacks.
 3. `signature` is a valid detached Ed25519 signature of the challenge string for that `peer_id`.
 
-If authentication succeeds, the tracker registers or updates the peer in `ActivePeer`. If authentication fails or fields are missing/expired, the tracker returns an error payload and discards the registration:
+If authentication succeeds, the tracker registers or updates the peer in its active peer registry. If authentication fails or fields are missing/expired, the tracker returns an error payload and discards the registration:
 ```json
 {
   "type": "error",
@@ -160,7 +131,7 @@ If authentication succeeds, the tracker registers or updates the peer in `Active
 
 
 #### 2. Nearby Peer List (`peer_list`)
-Sent by the Tracker back to the registering client containing all active peers in the matching zone (`geohash[:5]`):
+Sent by the Tracker back to the registering client containing all active peers in the matching spatial swarm cell (Geohash precision 5):
 ```json
 {
   "type": "peer_list",
@@ -188,8 +159,8 @@ Broadcast by the Tracker to all active peers in the same spatial room when a pee
 }
 ```
 
-#### 4. WebRTC Signaling Relay (`signal`)
-Relayed transparently through the Tracker to negotiate direct P2P WebRTC data channels between peers:
+#### 4. Peer Connection Signaling Relay (`signal`)
+Relayed transparently as an opaque payload through the Tracker to negotiate direct P2P transport between peers (using standard WebRTC SDP offer/answer and ICE candidate schemas as the reference standard for browser swarms):
 ```json
 // SDP Offer / Answer
 {
@@ -219,36 +190,51 @@ Relayed transparently through the Tracker to negotiate direct P2P WebRTC data ch
 
 ---
 
-## 5. WebRTC DataChannel Synchronization Protocol (`strata-sync`)
+## 4. Direct Peer Synchronization Protocol (`handshake-sync`)
 
-Once a direct WebRTC connection is established between two peers (following the signaling handshake coordinated by the Tracker), communication occurs over an RTCDataChannel labeled `"strata-sync"`.
+Once a direct peer connection is established (e.g. over a WebRTC RTCDataChannel labeled `"handshake-sync"` in browser swarms, or local transport in proximity encounters), data exchange is demand-driven and governed by inventory negotiation.
 
-### DataChannel Message Exchange:
+### DataChannel Message Exchange (3-Step Inventory Negotiation):
 
-#### 1. Synchronization Request (`request_sync`)
-Upon channel opening (`onopen`), the initiating client requests graffitis for its current spatial viewport:
+#### 1. Spatial Inventory Announcement (`inventory`)
+Upon channel opening (`onopen`) or when a peer's viewport changes, the initiating client sends an inventory of known message signatures for its current spatial cell:
 ```json
 {
-  "type": "request_sync",
-  "geohash": "69y7p"
+  "type": "inventory",
+  "geohash": "69y7p",
+  "signatures": [
+    "3f9c4a...signature1",
+    "a1b2c3...signature2"
+  ]
 }
 ```
 
-#### 2. Synchronization Response & Live Broadcast (`sync_response`)
-Sent in response to `request_sync` or broadcast to all connected swarm peers whenever a new graffiti is authored or seeded locally:
+#### 2. Selective Missing Message Request (`request_missing`)
+The receiving peer compares the inventory against its local storage and requests only signatures it does not possess:
+```json
+{
+  "type": "request_missing",
+  "signatures": [
+    "3f9c4a...signature1"
+  ]
+}
+```
+
+#### 3. Payload Delivery (`sync_response`)
+Sent in response to `request_missing` (delivering only requested messages), or broadcast across active peers when a new message is published locally:
 ```json
 {
   "type": "sync_response",
-  "graffitis": [
+  "messages": [
     {
       "version": "1.0",
       "header": {
         "author_pk": "7b8a1c...",
         "parent_signature": null,
-        "timestamp": 1787928000,
         "signature": "3f9c4a..."
       },
-      "location": {
+      "anchor": {
+        "timestamp": 1787928000,
         "geohash": "69y7pg3",
         "coordinates": { "lat": -34.6037, "lon": -58.3816 }
       },
@@ -260,110 +246,76 @@ Sent in response to `request_sync` or broadcast to all connected swarm peers whe
 }
 ```
 
-#### 3. Ingestion & Cryptographic Verification Pipeline:
+#### 4. Ingestion & Zero-Trust Cryptographic Verification Pipeline:
 When a peer receives a `sync_response`:
-1. It iterates through each graffiti in `graffitis`.
-2. Reconstructs the canonical JSON payload (excluding `header.signature`).
-3. Verifies the Ed25519 signature against `header.author_pk`.
-4. If valid, persists the graffiti in local DuckDB/IndexedDB and updates the visual viewport.
+1. **Size Boundary Check:** Discards immediately any message payload exceeding the hard limit of 64 KB before parsing.
+2. **Strict Schema Check:** Verifies that the JSON strictly contains the core triad (`header`, `anchor`, `content`) without unauthorized fields.
+3. **Canonical Reconstruction:** Reconstructs the canonical JSON payload (excluding `header.signature`) according to RFC 8785.
+4. **Signature Verification:** Verifies the detached Ed25519 signature against `header.author_pk`.
+5. **Storage Ingestion:** If valid, ingests the message into sovereign local storage and updates visual views. Untrusted, malformed, or tampered messages are immediately discarded.
 
 ---
 
-## 6. Swarm Grouping & InfoHash
+## 5. Swarm Grouping & InfoHash
 
-Graffitis are grouped into **spatial and temporal directories**:
+Messages are grouped into **spatial cells and temporal epochs**:
 
 1. **Spatial Resolution:** Territory is partitioned into spatial cells using **Geohash precision 6 or 7** (approx. ~1.2 km to ~150 meters).
 2. **Temporal Resolution:** Time is partitioned into **monthly epochs** in `YYYY-MM` format.
 3. **InfoHash Generation:** A deterministic SHA-1 identifier is computed for the swarm:
    $$\text{InfoHash} = \text{SHA1}(\text{geohash} + ":" + \text{epoch})$$
-4. **Collective Seeding:** Peer connections exchange messages belonging to the given `InfoHash`. Each file is saved locally as:
-   `{timestamp}_{author_pk_prefix}.msg`
+4. **Collective Seeding:** Peer connections exchange messages belonging to the given `InfoHash`, persisting them in local sovereign storage.
 5. **Historical Custody:** Nodes can seed both current, past, and future epochs stored locally, acting as custodians of spatial-temporal memory.
 
 ---
 
-## 7. Sovereign Storage, Metabolism, and Embedded DuckDB
+## 6. Sovereign Storage and Metabolism Specification
 
-The protocol adopts **DuckDB** as the embedded database engine for Web clients (`@duckdb/duckdb-wasm` in IndexedDB) and desktop/server clients (`duckdb` in Python).
+Clients maintain sovereign local-first storage. The protocol is strictly agnostic of concrete storage engines (whether implemented via IndexedDB, SQLite, DuckDB, or key-value stores), but mandates the essential logical data model, query capabilities, and local metabolism (eviction) rules.
 
-### Database Schemas
+### Storage Data Model Requirements
 
-#### 1. Graffitis Table (`graffitis`)
-```sql
-CREATE TABLE IF NOT EXISTS graffitis (
-    signature VARCHAR PRIMARY KEY,         -- Unique Ed25519 message signature
-    author_pk VARCHAR NOT NULL,           -- Author public key
-    parent_signature VARCHAR,             -- Parent message signature (for threads)
-    timestamp BIGINT NOT NULL,            -- UNIX timestamp
-    geohash VARCHAR NOT NULL,             -- Spatial geohash (e.g. 'dr5reg6')
-    lat DOUBLE NOT NULL,                  -- Latitude
-    lon DOUBLE NOT NULL,                  -- Longitude
-    content_text TEXT NOT NULL,           -- Graffiti text content
-    attachments_json JSON,                -- Serialized multimedia attachments
-    is_pinned BOOLEAN DEFAULT FALSE,      -- Pinned flag for storage custody
-    raw_json JSON NOT NULL                -- Canonical JSON payload for P2P re-seeding
-);
+Every compliant client implementation MUST locally persist messages with the following logical properties:
 
-CREATE INDEX IF NOT EXISTS idx_spatial ON graffitis(geohash);
-CREATE INDEX IF NOT EXISTS idx_time ON graffitis(timestamp);
-CREATE INDEX IF NOT EXISTS idx_parent ON graffitis(parent_signature);
-```
+1. **Unique Message Identifier:** The Ed25519 `header.signature` serves as the primary unique key.
+2. **Author Identity:** The author's public key (`header.author_pk`).
+3. **Thread Link:** The optional parent message signature (`header.parent_signature`).
+4. **Space-Time Anchor:**
+   - Geohash spatial index (`anchor.geohash`).
+   - High-precision spatial coordinates (`anchor.coordinates.lat`, `anchor.coordinates.lon`).
+   - Temporal coordinate UNIX epoch (`anchor.timestamp`).
+5. **Payload Content:**
+   - Textual payload (`content.text`).
+   - Optional multimedia attachments.
+6. **Canonical Wire Payload:** Preserved verbatim for zero-trust relaying and P2P re-seeding without re-encoding.
+7. **Storage Custody Flags:**
+   - User pin flag (`is_pinned`), set explicitly by the sovereign user.
 
-#### 2. Trusted Handshakes Table (`trusted_handshakes`)
-```sql
-CREATE TABLE IF NOT EXISTS trusted_handshakes (
-    public_key VARCHAR PRIMARY KEY,      -- Ed25519 public key of contact
-    alias VARCHAR,                      -- Locally assigned alias/name
-    added_at BIGINT NOT NULL,           -- UNIX timestamp when handshake was established
-    qr_verified BOOLEAN DEFAULT TRUE    -- Verified via QR exchange or local pairing
-);
-```
+### Local Trust Store (`trusted_handshakes`)
 
-### Core DuckDB Queries:
+Clients maintain a sovereign local store of trusted public keys to grant storage immunity:
+- `public_key`: Ed25519 public key of the trusted contact.
+- `alias`: Locally assigned nickname.
+- `added_at`: UNIX timestamp when trust was established (e.g. via direct in-person QR exchange or BLE proximity).
 
-1. **Space-Time Retrieval for Map Viewport:**
-   ```sql
-   SELECT * FROM graffitis
-   WHERE geohash LIKE 'dr5re%'
-     AND timestamp BETWEEN :start_ts AND :end_ts
-   ORDER BY timestamp DESC;
-   ```
+### Required Indexing and Query Capabilities
 
-2. **Recursive Conversation Thread Reconstruction:**
-   ```sql
-   WITH RECURSIVE thread AS (
-       SELECT * FROM graffitis WHERE signature = :target_signature
-       UNION ALL
-       SELECT g.* FROM graffitis g
-       JOIN thread t ON g.parent_signature = t.signature
-   )
-   SELECT * FROM thread ORDER BY timestamp ASC;
-   ```
+To participate in spatial discovery and conversation threads, client storage engines MUST support:
+1. **Spatial-Temporal Range Queries:** Efficient filtering of messages within a spatial cell (matching geohash prefix) and a time interval (`start_timestamp` to `end_timestamp`).
+2. **Genealogical Traversal:** Direct lookup by `header.signature` and child lookup by `header.parent_signature` to assemble conversational trees.
 
-3. **Storage Metabolism and Purge Policy (Configurable Limit):**
-   ```sql
-   -- Purge oldest messages that are neither pinned nor from trusted Handshake contacts
-   DELETE FROM graffitis
-   WHERE is_pinned = FALSE
-     AND author_pk NOT IN (SELECT public_key FROM trusted_handshakes)
-     AND signature IN (
-         SELECT signature FROM graffitis
-         WHERE is_pinned = FALSE
-           AND author_pk NOT IN (SELECT public_key FROM trusted_handshakes)
-         ORDER BY timestamp ASC
-         LIMIT :purge_count
-     );
-   ```
+### Storage Metabolism and Eviction Policy
 
-### Handshake Role & Storage Immunity:
-*   **Storage Immunity & Custody:** Messages explicitly pinned by the user (`is_pinned = TRUE` / `.keep`) or authored by trusted contacts in `trusted_handshakes` are granted immunity against automatic storage metabolism purges.
-*   **Optional In-Person Exchange:** Direct exchange of public keys (e.g. face-to-face QR code scanning or BLE proximity) can populate `trusted_handshakes` locally as an optional convenience.
+Nodes operate within finite local storage budgets. When storage thresholds are exceeded, the client executes an automated metabolism policy:
+1. **Eviction Precedence:** Messages are evicted in order of oldest `anchor.timestamp` first (FIFO).
+2. **Storage Immunity:** Messages are strictly IMMUNE to automated eviction if:
+   - The message is explicitly pinned by the user (`is_pinned = true`), OR
+   - The message author's public key exists in the client's local `trusted_handshakes` store.
 
 ---
 
-## 8. Spatial Conversation Threads
+## 7. Spatial Conversation Threads
 
-*   **Parent Linking (`parent_signature`):** Replying to a graffiti includes the parent message's Ed25519 signature in the header.
+*   **Parent Linking (`parent_signature`):** Replying to a message includes the parent message's Ed25519 signature in the header.
 *   **Sovereign & Itinerant Replies:** Every reply is a sovereign space-time trace carrying its own declarative coordinates. An author may anchor a reply at the exact same location as the parent message, at their own physical location (tracing an itinerant physical path across the map), or at any arbitrary coordinates chosen across space.
 *   **Decentralized Tree Reconstruction:** The client connects messages and reconstructs the thread tree locally using cryptographic signatures. If a node lacks a parent message, it can request it with priority from swarm peers.
