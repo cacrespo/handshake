@@ -80,11 +80,11 @@ describe('App Component', () => {
     expect(screen.queryByPlaceholderText(/Escribe el graffiti o huella/i)).not.toBeInTheDocument();
   });
 
-  it('renders the P2P live HUD with WebRTC peers, active geohash, and strata-sync status', () => {
+  it('renders the P2P live HUD with WebRTC peers, active geohash, and handshake-sync status', () => {
     render(<App />);
     expect(screen.getByText(/Peers:/i)).toBeInTheDocument();
     expect(screen.getByText(/Celda:/i)).toBeInTheDocument();
-    expect(screen.getByText(/Strata-Sync:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Handshake-Sync:/i)).toBeInTheDocument();
   });
 
   it('toggles seamlessly between 3D Globe view and 2D Map view', () => {

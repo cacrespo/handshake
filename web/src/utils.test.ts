@@ -323,31 +323,31 @@ describe("WebRTC DataChannel Message Validation (SEC-06)", () => {
   });
 
   describe("isValidSyncResponse", () => {
-    it("accepts valid sync_response messages with array of graffitis", () => {
-      expect(isValidSyncResponse({ type: "sync_response", graffitis: [] })).toBe(true);
-      expect(isValidSyncResponse({ type: "sync_response", graffitis: [{ id: 1 }, { id: 2 }] })).toBe(true);
+    it("accepts valid sync_response messages with array of messages", () => {
+      expect(isValidSyncResponse({ type: "sync_response", messages: [] })).toBe(true);
+      expect(isValidSyncResponse({ type: "sync_response", messages: [{ id: 1 }, { id: 2 }] })).toBe(true);
     });
 
-    it("rejects messages where graffitis is not an array", () => {
+    it("rejects messages where messages is not an array", () => {
       expect(isValidSyncResponse({ type: "sync_response" })).toBe(false);
-      expect(isValidSyncResponse({ type: "sync_response", graffitis: null })).toBe(false);
-      expect(isValidSyncResponse({ type: "sync_response", graffitis: "not-an-array" })).toBe(false);
-      expect(isValidSyncResponse({ type: "sync_response", graffitis: 42 })).toBe(false);
-      expect(isValidSyncResponse({ type: "sync_response", graffitis: {} })).toBe(false);
+      expect(isValidSyncResponse({ type: "sync_response", messages: null })).toBe(false);
+      expect(isValidSyncResponse({ type: "sync_response", messages: "not-an-array" })).toBe(false);
+      expect(isValidSyncResponse({ type: "sync_response", messages: 42 })).toBe(false);
+      expect(isValidSyncResponse({ type: "sync_response", messages: {} })).toBe(false);
     });
 
     it("rejects non-object or malformed structures", () => {
       expect(isValidSyncResponse(null)).toBe(false);
       expect(isValidSyncResponse(undefined)).toBe(false);
       expect(isValidSyncResponse("sync_response")).toBe(false);
-      expect(isValidSyncResponse({ type: "unknown", graffitis: [] })).toBe(false);
+      expect(isValidSyncResponse({ type: "unknown", messages: [] })).toBe(false);
     });
   });
 
   describe("isValidDataChannelMessage", () => {
     it("recognizes valid sync requests and responses", () => {
       expect(isValidDataChannelMessage({ type: "request_sync", geohash: "6g3qc" })).toBe(true);
-      expect(isValidDataChannelMessage({ type: "sync_response", graffitis: [] })).toBe(true);
+      expect(isValidDataChannelMessage({ type: "sync_response", messages: [] })).toBe(true);
     });
 
     it("rejects arbitrary or malicious payloads", () => {

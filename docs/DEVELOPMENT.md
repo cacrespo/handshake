@@ -87,8 +87,83 @@ To verify real-time, serverless peer-to-peer data synchronization:
 2.  Open **two separate browser windows** (or one normal and one incognito window) pointing to `http://localhost:5173`.
 3.  In both windows, ensure each client generates or loads an Ed25519 identity.
 4.  Navigate both windows to the same geographical area (e.g. Buenos Aires, Obelisco) and temporal day.
-5.  Check the live HUD indicator: the Tracker should match both peers in the same spatial cell (`geohash[:5]`) and establish a direct WebRTC DataChannel labeled `"strata-sync"`.
+5.  Check the live HUD indicator: the Tracker should match both peers in the same spatial cell (`geohash[:5]`) and establish a direct WebRTC DataChannel labeled `"handshake-sync"`.
 6.  **Publish a message in Window A:**
-    - Click *"Pintar Graffiti"*, write a message, and publish.
+    - Click *"Publicar Mensaje"*, write a message, and publish.
 7.  **Verify instant sync in Window B:**
     - The message will be announced via inventory negotiation and rendered on the map and timeline in Window B directly over WebRTC, without ever touching central database storage.
+
+---
+
+## 5. Reference Storage Engine Implementation (DuckDB SQL)
+
+For the Python CLI and background node engine (`src/strata/core/storage.py`), local sovereign persistence is implemented using an embedded [DuckDB](https://duckdb.org/) database. Other clients (such as the web frontend with IndexedDB or mobile with SQLite) may choose alternative engines as long as they satisfy the data model and metabolism requirements defined in [Protocol Specification](protocol.md#6-sovereign-storage-and-metabolism-specification).
+
+### Reference Database Schemas:
+
+#### 1. Messages Table (`graffitis`)
+```sql
+CREATE TABLE IF NOT EXISTS graffitis (
+    signature VARCHAR PRIMARY KEY,         -- Unique Ed25519 message signature
+    author_pk VARCHAR NOT NULL,           -- Author public key
+    parent_signature VARCHAR,             -- Parent message signature (for threads)
+    timestamp BIGINT NOT NULL,            -- UNIX timestamp
+    geohash VARCHAR NOT NULL,             -- Spatial geohash (e.g. 'dr5reg6')
+    lat DOUBLE NOT NULL,                  -- Latitude
+    lon DOUBLE NOT NULL,                  -- Longitude
+    content_text TEXT NOT NULL,           -- Message text content
+    attachments_json JSON,                -- Serialized multimedia attachments
+    is_pinned BOOLEAN DEFAULT FALSE,      -- Pinned flag for storage custody
+    raw_json JSON NOT NULL                -- Canonical JSON payload for P2P re-seeding
+);
+
+CREATE INDEX IF NOT EXISTS idx_spatial ON graffitis(geohash);
+CREATE INDEX IF NOT EXISTS idx_time ON graffitis(timestamp);
+CREATE INDEX IF NOT EXISTS idx_parent ON graffitis(parent_signature);
+```
+
+#### 2. Trusted Handshakes Table (`trusted_handshakes`)
+```sql
+CREATE TABLE IF NOT EXISTS trusted_handshakes (
+    public_key VARCHAR PRIMARY KEY,      -- Ed25519 public key of contact
+    alias VARCHAR,                      -- Locally assigned alias/name
+    added_at BIGINT NOT NULL,           -- UNIX timestamp when handshake was established
+    qr_verified BOOLEAN DEFAULT TRUE    -- Verified via QR exchange or local pairing
+);
+```
+
+### Reference Queries:
+
+1. **Space-Time Retrieval for Viewport:**
+   ```sql
+   SELECT * FROM graffitis
+   WHERE geohash LIKE 'dr5re%'
+     AND timestamp BETWEEN :start_ts AND :end_ts
+   ORDER BY timestamp DESC;
+   ```
+
+2. **Recursive Conversation Thread Reconstruction:**
+   ```sql
+   WITH RECURSIVE thread AS (
+       SELECT * FROM graffitis WHERE signature = :target_signature
+       UNION ALL
+       SELECT g.* FROM graffitis g
+       JOIN thread t ON g.parent_signature = t.signature
+   )
+   SELECT * FROM thread ORDER BY timestamp ASC;
+   ```
+
+3. **Storage Metabolism and Purge Policy (Configurable Limit):**
+   ```sql
+   -- Purge oldest messages that are neither pinned nor from trusted Handshake contacts
+   DELETE FROM graffitis
+   WHERE is_pinned = FALSE
+     AND author_pk NOT IN (SELECT public_key FROM trusted_handshakes)
+     AND signature IN (
+         SELECT signature FROM graffitis
+         WHERE is_pinned = FALSE
+           AND author_pk NOT IN (SELECT public_key FROM trusted_handshakes)
+         ORDER BY timestamp ASC
+         LIMIT :purge_count
+     );
+   ```

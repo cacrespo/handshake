@@ -593,7 +593,7 @@ export default function App() {
       }
     };
 
-    const dc = pc.createDataChannel("strata-sync");
+    const dc = pc.createDataChannel("handshake-sync");
     setupDataChannel(targetPeerId, dc);
     dataChannels.current[targetPeerId] = dc;
 
@@ -748,15 +748,15 @@ export default function App() {
           );
           dc.send(JSON.stringify({
             type: "sync_response",
-            graffitis: filtered
+            messages: filtered
           }));
-          addLog(`[P2P] Sent ${filtered.length} local graffitis to peer.`, "info");
+          addLog(`[P2P] Sent ${filtered.length} local messages to peer.`, "info");
         } else if (data.type === "sync_response") {
-          if (!Array.isArray(data.graffitis)) {
-            console.warn(`[P2P] Discarding sync_response with non-array graffitis from peer ${peerId}`);
+          const incoming = data.messages || data.graffitis;
+          if (!Array.isArray(incoming)) {
+            console.warn(`[P2P] Discarding sync_response with non-array messages from peer ${peerId}`);
             return;
           }
-          const incoming = data.graffitis;
           let addedCount = 0;
           
           setRemoteGraffitis(prev => {
@@ -851,7 +851,7 @@ export default function App() {
       if (dc.readyState === "open") {
         dc.send(JSON.stringify({
           type: "sync_response",
-          graffitis: [fullySignedMessage]
+          messages: [fullySignedMessage]
         }));
       }
     });
@@ -1125,9 +1125,9 @@ export default function App() {
             <span>Celda: <code>{geohash.substring(0, 7)}</code></span>
           </div>
 
-          <div className="hud-pill" title="Estado de sincronización Strata-Sync">
+          <div className="hud-pill" title="Estado de sincronización Handshake-Sync">
             <Activity size={12} style={{ color: wsStatus === "connected" ? "var(--neon-emerald)" : "var(--neon-amber)" }} />
-            <span>Strata-Sync: <code style={{ color: wsStatus === "connected" ? "var(--neon-emerald)" : "var(--neon-amber)" }}>{wsStatus === "connected" ? "Live" : "Standby"}</code></span>
+            <span>Handshake-Sync: <code style={{ color: wsStatus === "connected" ? "var(--neon-emerald)" : "var(--neon-amber)" }}>{wsStatus === "connected" ? "Live" : "Standby"}</code></span>
           </div>
 
           {/* View Mode Switcher */}

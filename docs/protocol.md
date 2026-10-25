@@ -190,9 +190,9 @@ Relayed transparently as an opaque payload through the Tracker to negotiate dire
 
 ---
 
-## 4. Direct Peer Synchronization Protocol (`strata-sync`)
+## 4. Direct Peer Synchronization Protocol (`handshake-sync`)
 
-Once a direct peer connection is established (e.g. over a WebRTC RTCDataChannel labeled `"strata-sync"` in browser swarms, or local transport in proximity encounters), data exchange is demand-driven and governed by inventory negotiation.
+Once a direct peer connection is established (e.g. over a WebRTC RTCDataChannel labeled `"handshake-sync"` in browser swarms, or local transport in proximity encounters), data exchange is demand-driven and governed by inventory negotiation.
 
 ### DataChannel Message Exchange (3-Step Inventory Negotiation):
 
@@ -225,7 +225,7 @@ Sent in response to `request_missing` (delivering only requested messages), or b
 ```json
 {
   "type": "sync_response",
-  "graffitis": [
+  "messages": [
     {
       "version": "1.0",
       "header": {
@@ -269,82 +269,48 @@ Messages are grouped into **spatial cells and temporal epochs**:
 
 ---
 
-## 6. Sovereign Storage, Metabolism, and Relational Schema
+## 6. Sovereign Storage and Metabolism Specification
 
-Clients maintain sovereign local-first storage. The protocol defines a reference relational schema (standardized with SQL / DuckDB semantics) to specify table structures, indexing requirements, and automatic metabolism purges across client implementations.
+Clients maintain sovereign local-first storage. The protocol is strictly agnostic of concrete storage engines (whether implemented via IndexedDB, SQLite, DuckDB, or key-value stores), but mandates the essential logical data model, query capabilities, and local metabolism (eviction) rules.
 
-### Database Schemas
+### Storage Data Model Requirements
 
-#### 1. Graffitis Table (`graffitis`)
-```sql
-CREATE TABLE IF NOT EXISTS graffitis (
-    signature VARCHAR PRIMARY KEY,         -- Unique Ed25519 message signature
-    author_pk VARCHAR NOT NULL,           -- Author public key
-    parent_signature VARCHAR,             -- Parent message signature (for threads)
-    timestamp BIGINT NOT NULL,            -- UNIX timestamp
-    geohash VARCHAR NOT NULL,             -- Spatial geohash (e.g. 'dr5reg6')
-    lat DOUBLE NOT NULL,                  -- Latitude
-    lon DOUBLE NOT NULL,                  -- Longitude
-    content_text TEXT NOT NULL,           -- Graffiti text content
-    attachments_json JSON,                -- Serialized multimedia attachments
-    is_pinned BOOLEAN DEFAULT FALSE,      -- Pinned flag for storage custody
-    raw_json JSON NOT NULL                -- Canonical JSON payload for P2P re-seeding
-);
+Every compliant client implementation MUST locally persist messages with the following logical properties:
 
-CREATE INDEX IF NOT EXISTS idx_spatial ON graffitis(geohash);
-CREATE INDEX IF NOT EXISTS idx_time ON graffitis(timestamp);
-CREATE INDEX IF NOT EXISTS idx_parent ON graffitis(parent_signature);
-```
+1. **Unique Message Identifier:** The Ed25519 `header.signature` serves as the primary unique key.
+2. **Author Identity:** The author's public key (`header.author_pk`).
+3. **Thread Link:** The optional parent message signature (`header.parent_signature`).
+4. **Space-Time Anchor:**
+   - Geohash spatial index (`anchor.geohash`).
+   - High-precision spatial coordinates (`anchor.coordinates.lat`, `anchor.coordinates.lon`).
+   - Temporal coordinate UNIX epoch (`anchor.timestamp`).
+5. **Payload Content:**
+   - Textual payload (`content.text`).
+   - Optional multimedia attachments.
+6. **Canonical Wire Payload:** Preserved verbatim for zero-trust relaying and P2P re-seeding without re-encoding.
+7. **Storage Custody Flags:**
+   - User pin flag (`is_pinned`), set explicitly by the sovereign user.
 
-#### 2. Trusted Handshakes Table (`trusted_handshakes`)
-```sql
-CREATE TABLE IF NOT EXISTS trusted_handshakes (
-    public_key VARCHAR PRIMARY KEY,      -- Ed25519 public key of contact
-    alias VARCHAR,                      -- Locally assigned alias/name
-    added_at BIGINT NOT NULL,           -- UNIX timestamp when handshake was established
-    qr_verified BOOLEAN DEFAULT TRUE    -- Verified via QR exchange or local pairing
-);
-```
+### Local Trust Store (`trusted_handshakes`)
 
-### Reference Relational Queries (SQL / DuckDB):
+Clients maintain a sovereign local store of trusted public keys to grant storage immunity:
+- `public_key`: Ed25519 public key of the trusted contact.
+- `alias`: Locally assigned nickname.
+- `added_at`: UNIX timestamp when trust was established (e.g. via direct in-person QR exchange or BLE proximity).
 
-1. **Space-Time Retrieval for Map Viewport:**
-   ```sql
-   SELECT * FROM graffitis
-   WHERE geohash LIKE 'dr5re%'
-     AND timestamp BETWEEN :start_ts AND :end_ts
-   ORDER BY timestamp DESC;
-   ```
+### Required Indexing and Query Capabilities
 
-2. **Recursive Conversation Thread Reconstruction:**
-   ```sql
-   WITH RECURSIVE thread AS (
-       SELECT * FROM graffitis WHERE signature = :target_signature
-       UNION ALL
-       SELECT g.* FROM graffitis g
-       JOIN thread t ON g.parent_signature = t.signature
-   )
-   SELECT * FROM thread ORDER BY timestamp ASC;
-   ```
+To participate in spatial discovery and conversation threads, client storage engines MUST support:
+1. **Spatial-Temporal Range Queries:** Efficient filtering of messages within a spatial cell (matching geohash prefix) and a time interval (`start_timestamp` to `end_timestamp`).
+2. **Genealogical Traversal:** Direct lookup by `header.signature` and child lookup by `header.parent_signature` to assemble conversational trees.
 
-3. **Storage Metabolism and Purge Policy (Configurable Limit):**
-   ```sql
-   -- Purge oldest messages that are neither pinned nor from trusted Handshake contacts
-   DELETE FROM graffitis
-   WHERE is_pinned = FALSE
-     AND author_pk NOT IN (SELECT public_key FROM trusted_handshakes)
-     AND signature IN (
-         SELECT signature FROM graffitis
-         WHERE is_pinned = FALSE
-           AND author_pk NOT IN (SELECT public_key FROM trusted_handshakes)
-         ORDER BY timestamp ASC
-         LIMIT :purge_count
-     );
-   ```
+### Storage Metabolism and Eviction Policy
 
-### Handshake Role & Storage Immunity:
-*   **Storage Immunity & Custody:** Messages explicitly pinned by the user (`is_pinned = TRUE`) or authored by trusted contacts in `trusted_handshakes` are granted immunity against automatic storage metabolism purges.
-*   **Optional In-Person Exchange:** Direct exchange of public keys (e.g. face-to-face QR code scanning or BLE proximity) can populate `trusted_handshakes` locally as an optional convenience.
+Nodes operate within finite local storage budgets. When storage thresholds are exceeded, the client executes an automated metabolism policy:
+1. **Eviction Precedence:** Messages are evicted in order of oldest `anchor.timestamp` first (FIFO).
+2. **Storage Immunity:** Messages are strictly IMMUNE to automated eviction if:
+   - The message is explicitly pinned by the user (`is_pinned = true`), OR
+   - The message author's public key exists in the client's local `trusted_handshakes` store.
 
 ---
 

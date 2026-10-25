@@ -189,19 +189,22 @@ def parse_sql_create_tables(sql_text: str) -> dict[str, dict[str, Any]]:
 
 def check_schema_consistency(repo_root: Path) -> list[str]:
     """
-    Validates that database table schemas documented in docs/protocol.md match
-    the schema definitions in src/strata/core/schema.py.
+    Validates that database table schemas documented in docs/DEVELOPMENT.md (or docs/protocol.md)
+    match the schema definitions in src/strata/core/schema.py.
     """
     errors: list[str] = []
+    dev_doc = repo_root / "docs" / "DEVELOPMENT.md"
     protocol_doc = repo_root / "docs" / "protocol.md"
     schema_code = repo_root / "src" / "strata" / "core" / "schema.py"
 
-    if not protocol_doc.exists():
-        return [f"Missing protocol documentation at {protocol_doc.relative_to(repo_root)}"]
+    target_doc = dev_doc if dev_doc.exists() else protocol_doc
+
+    if not target_doc.exists():
+        return [f"Missing schema documentation file at {target_doc.relative_to(repo_root)}"]
     if not schema_code.exists():
         return [f"Missing schema code file at {schema_code.relative_to(repo_root)}"]
 
-    doc_text = protocol_doc.read_text(encoding="utf-8")
+    doc_text = target_doc.read_text(encoding="utf-8")
     doc_tables = parse_sql_create_tables(doc_text)
 
     # Import code schemas dynamically
@@ -211,11 +214,13 @@ def check_schema_consistency(repo_root: Path) -> list[str]:
     except Exception as e:
         return [f"Failed to import strata.core.schema: {e}"]
 
+    doc_rel = target_doc.relative_to(repo_root)
+
     # 1. Verify documented tables exist in code
     for doc_table_name, doc_meta in doc_tables.items():
         if doc_table_name not in TABLE_SCHEMAS:
             errors.append(
-                f"Documented table '{doc_table_name}' in docs/protocol.md is missing from code TABLE_SCHEMAS."
+                f"Documented table '{doc_table_name}' in {doc_rel} is missing from code TABLE_SCHEMAS."
             )
             continue
 
@@ -227,7 +232,7 @@ def check_schema_consistency(repo_root: Path) -> list[str]:
         for col, col_type in doc_cols.items():
             if col not in code_cols:
                 errors.append(
-                    f"Column '{col}' for table '{doc_table_name}' in docs/protocol.md missing from code."
+                    f"Column '{col}' for table '{doc_table_name}' in {doc_rel} missing from code."
                 )
             elif code_cols[col] != col_type:
                 errors.append(
@@ -238,7 +243,7 @@ def check_schema_consistency(repo_root: Path) -> list[str]:
         for code_col in code_cols:
             if code_col not in doc_cols:
                 errors.append(
-                    f"Column '{code_col}' in code for table '{doc_table_name}' missing from docs/protocol.md."
+                    f"Column '{code_col}' in code for table '{doc_table_name}' missing from {doc_rel}."
                 )
 
         # Check primary key
@@ -253,7 +258,7 @@ def check_schema_consistency(repo_root: Path) -> list[str]:
     for code_table_name in TABLE_SCHEMAS:
         if code_table_name not in doc_tables:
             errors.append(
-                f"Code table '{code_table_name}' in strata.core.schema is not documented in docs/protocol.md."
+                f"Code table '{code_table_name}' in strata.core.schema is not documented in {doc_rel}."
             )
 
     return errors

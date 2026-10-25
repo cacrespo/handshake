@@ -34,7 +34,7 @@ export interface RequestSyncMessage {
 
 export interface SyncResponseMessage {
   type: "sync_response";
-  graffitis: any[];
+  messages: any[];
 }
 
 export type DataChannelMessage = RequestSyncMessage | SyncResponseMessage;
@@ -54,7 +54,7 @@ export function isValidSyncResponse(data: unknown): data is SyncResponseMessage 
     typeof data === "object" &&
     data !== null &&
     (data as any).type === "sync_response" &&
-    Array.isArray((data as any).graffitis)
+    Array.isArray((data as any).messages)
   );
 }
 
