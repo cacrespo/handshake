@@ -1,8 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import App from './App';
 import { toHex, fromHex, encodeGeohash, decodeGeohash, canonicalStringify } from './utils';
+import { initDB, saveMessage, getAllMessages, clearAll } from './storage/db';
 
 // Mock Leaflet and react-leaflet since Leaflet requires full canvas/DOM in jsdom
 vi.mock('react-leaflet', () => ({
@@ -56,6 +57,12 @@ describe('Hex & Geohash Utilities', () => {
 });
 
 describe('App Component', () => {
+  beforeEach(async () => {
+    localStorage.clear();
+    await initDB();
+    await clearAll();
+  });
+
   it('renders the header title and Pintar Graffiti action button', () => {
     render(<App />);
     expect(screen.getByText('Handshake')).toBeInTheDocument();
@@ -129,5 +136,94 @@ describe('App Component', () => {
     const gpsBtn = screen.getByRole('button', { name: /GPS actual/i });
     fireEvent.click(gpsBtn);
     expect(gpsBtn).toHaveClass('active');
+  });
+
+  it('loads persisted messages from IndexedDB on initial mount and displays in timeline', async () => {
+    // Pre-populate IndexedDB with a message
+    const now = Math.floor(Date.now() / 1000);
+    await saveMessage({
+      version: "1.0",
+      header: {
+        type: "PUBLIC",
+        owner_pk: null,
+        author_pk: "pubkey_test_author_123456",
+        parent_signature: null,
+        timestamp: now,
+        signature: "persisted_sig_001"
+      },
+      location: {
+        geohash: "6gyf4a1",
+        proof: { type: "GPS", data: "-34.6037,-58.3816" }
+      },
+      content: {
+        text: "Sovereign Graffiti Persisted in IndexedDB"
+      },
+      is_local: true
+    });
+
+    render(<App />);
+
+    // Wait for the message text to appear in timeline
+    expect(await screen.findByText('"Sovereign Graffiti Persisted in IndexedDB"')).toBeInTheDocument();
+  });
+
+  it('supports pinning and unpinning messages with IndexedDB persistence', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    await saveMessage({
+      version: "1.0",
+      header: {
+        type: "PUBLIC",
+        owner_pk: null,
+        author_pk: "pubkey_test_pin_author",
+        parent_signature: null,
+        timestamp: now,
+        signature: "pin_test_sig_002"
+      },
+      location: {
+        geohash: "6gyf4a1",
+        proof: { type: "GPS", data: "-34.6037,-58.3816" }
+      },
+      content: {
+        text: "Message to Pin"
+      },
+      is_local: true
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText('"Message to Pin"')).toBeInTheDocument();
+
+    // Click pin button (present on timeline card and map marker popup)
+    const pinBtns = screen.getAllByRole('button', { name: /📌 Fijar/i });
+    expect(pinBtns.length).toBeGreaterThan(0);
+    fireEvent.click(pinBtns[0]);
+
+    // Should now say "📌 Fijado"
+    const pinnedBtns = await screen.findAllByRole('button', { name: /📌 Fijado/i });
+    expect(pinnedBtns.length).toBeGreaterThan(0);
+
+    // Check IndexedDB
+    await waitFor(async () => {
+      const all = await getAllMessages();
+      const stored = all.find(m => m.signature === "pin_test_sig_002");
+      expect(stored?.is_pinned).toBe(1);
+    });
+  });
+
+  it('displays Sovereign Storage status in settings modal storage tab', async () => {
+    render(<App />);
+
+    // Open Settings Modal
+    const settingsBtn = screen.getByRole('button', { name: /Nodo & Ajustes/i });
+    fireEvent.click(settingsBtn);
+
+    // Click Storage tab
+    const storageTab = screen.getByRole('button', { name: /Custodia & Archivos/i });
+    fireEvent.click(storageTab);
+
+    // Verify Sovereign Storage info is displayed
+    expect(screen.getByText(/Almacenamiento Soberano Local-First \(Pilar 4\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/IndexedDB Activo/i)).toBeInTheDocument();
+    expect(screen.getByText(/handshake_db/i)).toBeInTheDocument();
   });
 });
