@@ -388,7 +388,7 @@ class SyncEngine:
         logger.info(f"Received DATA for {info_hash}")
         try:
             if "header" not in msg_data or "anchor" not in msg_data or "content" not in msg_data:
-                logger.warning(f"Discarding message with malformed schema: missing core triad")
+                logger.warning("Discarding message with malformed schema: missing core triad")
                 return
 
             anchor_data = msg_data["anchor"]
