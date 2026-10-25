@@ -245,16 +245,16 @@ describe("P2P Inventory-First Sync (Pillar 5 Alignment)", () => {
 
       const step3_packet: SyncResponseMessage = {
         type: "sync_response",
-        graffitis: toSend,
+        messages: toSend,
       };
 
       // === Peer B receives sync_response and processes it ===
-      const newlyIngested = processIncomingGraffitis(step3_packet.graffitis, peerB_existing_sigs);
+      const newlyIngested = processIncomingGraffitis(step3_packet.messages, peerB_existing_sigs);
       expect(newlyIngested).toHaveLength(1);
       expect(newlyIngested[0].header.signature).toBe(graf1.header.signature);
 
       // Verify Pillar 5 Invariant: graf2 was NEVER transmitted or requested!
-      expect(step3_packet.graffitis.some(g => g.header.signature === graf2.header.signature)).toBe(false);
+      expect(step3_packet.messages.some(g => g.header.signature === graf2.header.signature)).toBe(false);
     });
   });
 });

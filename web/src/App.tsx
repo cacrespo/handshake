@@ -837,9 +837,9 @@ export default function App() {
           const requested = findGraffitisBySignatures(allAvailable, data.signatures);
           dc.send(JSON.stringify({
             type: "sync_response",
-            graffitis: requested
+            messages: requested
           }));
-          addLog(`[P2P] Sent ${requested.length} requested graffitis to peer ${peerId.substring(0, 8)}.`, "info");
+          addLog(`[P2P] Sent ${requested.length} requested messages to peer ${peerId.substring(0, 8)}.`, "info");
         } else if (data.type === "request_sync") {
           // Backwards compatibility with legacy request_sync
           if (typeof data.geohash !== "string" || !data.geohash) {
