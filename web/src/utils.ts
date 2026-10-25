@@ -26,7 +26,7 @@ export const fromHex = (hex: string): Uint8Array => {
   return view;
 };
 
-// WebRTC DataChannel message validation helpers (SEC-06)
+// WebRTC DataChannel message validation helpers (SEC-06 & Pillar 5 Inventory-First)
 export interface RequestSyncMessage {
   type: "request_sync";
   geohash: string;
@@ -37,7 +37,22 @@ export interface SyncResponseMessage {
   messages: any[];
 }
 
-export type DataChannelMessage = RequestSyncMessage | SyncResponseMessage;
+export interface InventoryMessage {
+  type: "inventory";
+  geohash: string;
+  signatures: string[];
+}
+
+export interface RequestMissingMessage {
+  type: "request_missing";
+  signatures: string[];
+}
+
+export type DataChannelMessage =
+  | RequestSyncMessage
+  | SyncResponseMessage
+  | InventoryMessage
+  | RequestMissingMessage;
 
 export function isValidSyncRequest(data: unknown): data is RequestSyncMessage {
   return (
@@ -58,8 +73,35 @@ export function isValidSyncResponse(data: unknown): data is SyncResponseMessage 
   );
 }
 
+export function isValidInventory(data: unknown): data is InventoryMessage {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as any).type === "inventory" &&
+    typeof (data as any).geohash === "string" &&
+    (data as any).geohash.length > 0 &&
+    Array.isArray((data as any).signatures) &&
+    (data as any).signatures.every((sig: unknown) => typeof sig === "string")
+  );
+}
+
+export function isValidRequestMissing(data: unknown): data is RequestMissingMessage {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as any).type === "request_missing" &&
+    Array.isArray((data as any).signatures) &&
+    (data as any).signatures.every((sig: unknown) => typeof sig === "string")
+  );
+}
+
 export function isValidDataChannelMessage(data: unknown): data is DataChannelMessage {
-  return isValidSyncRequest(data) || isValidSyncResponse(data);
+  return (
+    isValidSyncRequest(data) ||
+    isValidSyncResponse(data) ||
+    isValidInventory(data) ||
+    isValidRequestMissing(data)
+  );
 }
 
 

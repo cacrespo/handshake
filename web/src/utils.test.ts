@@ -13,6 +13,8 @@ import {
   verifyTrackerRegistration,
   isValidSyncRequest,
   isValidSyncResponse,
+  isValidInventory,
+  isValidRequestMissing,
   isValidDataChannelMessage,
 } from "./utils";
 
@@ -344,16 +346,49 @@ describe("WebRTC DataChannel Message Validation (SEC-06)", () => {
     });
   });
 
+  describe("isValidInventory", () => {
+    it("accepts valid inventory messages", () => {
+      expect(isValidInventory({ type: "inventory", geohash: "69y7pba", signatures: ["sig1", "sig2"] })).toBe(true);
+      expect(isValidInventory({ type: "inventory", geohash: "6g3qc", signatures: [] })).toBe(true);
+    });
+
+    it("rejects invalid inventory messages", () => {
+      expect(isValidInventory({ type: "inventory", geohash: "", signatures: [] })).toBe(false);
+      expect(isValidInventory({ type: "inventory", signatures: ["sig1"] })).toBe(false);
+      expect(isValidInventory({ type: "inventory", geohash: "69y7p", signatures: "not-array" })).toBe(false);
+      expect(isValidInventory({ type: "inventory", geohash: "69y7p", signatures: [123] })).toBe(false);
+      expect(isValidInventory(null)).toBe(false);
+    });
+  });
+
+  describe("isValidRequestMissing", () => {
+    it("accepts valid request_missing messages", () => {
+      expect(isValidRequestMissing({ type: "request_missing", signatures: ["sig1"] })).toBe(true);
+      expect(isValidRequestMissing({ type: "request_missing", signatures: [] })).toBe(true);
+    });
+
+    it("rejects invalid request_missing messages", () => {
+      expect(isValidRequestMissing({ type: "request_missing" })).toBe(false);
+      expect(isValidRequestMissing({ type: "request_missing", signatures: "not-array" })).toBe(false);
+      expect(isValidRequestMissing({ type: "request_missing", signatures: [null] })).toBe(false);
+      expect(isValidRequestMissing(null)).toBe(false);
+    });
+  });
+
   describe("isValidDataChannelMessage", () => {
-    it("recognizes valid sync requests and responses", () => {
+    it("recognizes valid sync requests, responses, inventory, and request_missing messages", () => {
       expect(isValidDataChannelMessage({ type: "request_sync", geohash: "6g3qc" })).toBe(true);
       expect(isValidDataChannelMessage({ type: "sync_response", messages: [] })).toBe(true);
+      expect(isValidDataChannelMessage({ type: "inventory", geohash: "69y7p", signatures: ["sig1"] })).toBe(true);
+      expect(isValidDataChannelMessage({ type: "request_missing", signatures: ["sig1"] })).toBe(true);
     });
 
     it("rejects arbitrary or malicious payloads", () => {
       expect(isValidDataChannelMessage({ type: "eval", code: "alert(1)" })).toBe(false);
       expect(isValidDataChannelMessage({ type: "request_sync", geohash: 123 })).toBe(false);
-      expect(isValidDataChannelMessage({ type: "sync_response", graffitis: "bad" })).toBe(false);
+      expect(isValidDataChannelMessage({ type: "sync_response", messages: "bad" })).toBe(false);
+      expect(isValidDataChannelMessage({ type: "inventory", geohash: "", signatures: [] })).toBe(false);
+      expect(isValidDataChannelMessage({ type: "request_missing", signatures: "bad" })).toBe(false);
       expect(isValidDataChannelMessage(null)).toBe(false);
       expect(isValidDataChannelMessage("hello")).toBe(false);
     });

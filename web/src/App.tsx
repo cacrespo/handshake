@@ -33,6 +33,13 @@ import {
   getMessageTimestamp,
   getMessageGeohash
 } from "./utils";
+import {
+  filterSignaturesByGeohash,
+  diffInventory,
+  findGraffitisBySignatures,
+  processIncomingGraffitis,
+  type InventoryMessage
+} from "./sync";
 
 
 
@@ -266,12 +273,22 @@ export default function App() {
   const pcs = useRef<{ [peerId: string]: RTCPeerConnection }>({});
   const dataChannels = useRef<{ [peerId: string]: RTCDataChannel }>({});
   const localGraffitisRef = useRef<any[]>([]);
+  const remoteGraffitisRef = useRef<any[]>([]);
+  const geohashRef = useRef<string>("");
   const pendingCandidates = useRef<{ [peerId: string]: any[] }>({});
 
-  // Keep ref up to date for async loops
+  // Keep refs up to date for async loops and WebRTC event handlers
   useEffect(() => {
     localGraffitisRef.current = localGraffitis;
   }, [localGraffitis]);
+
+  useEffect(() => {
+    remoteGraffitisRef.current = remoteGraffitis;
+  }, [remoteGraffitis]);
+
+  useEffect(() => {
+    geohashRef.current = geohash;
+  }, [geohash]);
 
   const addLog = (text: string, type: "info" | "success" | "warning" | "danger" = "info") => {
     const timestamp = new Date().toLocaleTimeString();
@@ -708,14 +725,63 @@ export default function App() {
     }
   };
 
-  const setupDataChannel = (peerId: string, dc: RTCDataChannel) => {
-    dc.onopen = () => {
-      addLog(`[P2P] Channel active with peer: ${peerId.substring(0, 8)}`, "success");
-      dc.send(JSON.stringify({
-        type: "request_sync",
-        geohash: geohash
-      }));
+  const sendInventory = (dc: RTCDataChannel, targetGeohash: string) => {
+    if (!targetGeohash || dc.readyState !== "open") return;
+    const signatures = filterSignaturesByGeohash(localGraffitisRef.current, targetGeohash, 5);
+    const msg: InventoryMessage = {
+      type: "inventory",
+      geohash: targetGeohash,
+      signatures
     };
+    try {
+      dc.send(JSON.stringify(msg));
+      addLog(`[P2P] Sent inventory (${signatures.length} signatures) to peer.`, "info");
+    } catch (err) {
+      console.error("Error sending inventory:", err);
+    }
+  };
+
+  const broadcastInventory = (targetGeohash: string) => {
+    if (!targetGeohash) return;
+    const signatures = filterSignaturesByGeohash(localGraffitisRef.current, targetGeohash, 5);
+    const msg: InventoryMessage = {
+      type: "inventory",
+      geohash: targetGeohash,
+      signatures
+    };
+    const payload = JSON.stringify(msg);
+    Object.values(dataChannels.current).forEach(dc => {
+      if (dc.readyState === "open") {
+        try {
+          dc.send(payload);
+        } catch (err) {
+          console.error("Error broadcasting inventory:", err);
+        }
+      }
+    });
+  };
+
+  // Broadcast inventory when geohash/viewport changes
+  useEffect(() => {
+    if (geohash) {
+      broadcastInventory(geohash);
+    }
+  }, [geohash]);
+
+  const setupDataChannel = (peerId: string, dc: RTCDataChannel) => {
+    const onOpenHandler = () => {
+      addLog(`[P2P] Channel active with peer: ${peerId.substring(0, 8)}`, "success");
+      const currentGeohash = geohashRef.current;
+      if (currentGeohash) {
+        sendInventory(dc, currentGeohash);
+      }
+    };
+
+    if (dc.readyState === "open") {
+      onOpenHandler();
+    } else {
+      dc.onopen = onOpenHandler;
+    }
 
     dc.onclose = () => {
       addLog(`[P2P] Channel closed with peer: ${peerId.substring(0, 8)}`, "warning");
@@ -737,7 +803,45 @@ export default function App() {
           return;
         }
 
-        if (data.type === "request_sync") {
+        if (data.type === "inventory") {
+          // Step 2: Compare incoming signatures with local collection and request missing
+          if (typeof data.geohash !== "string" || !data.geohash || !Array.isArray(data.signatures)) {
+            console.warn(`[P2P] Discarding invalid inventory from peer ${peerId}`);
+            return;
+          }
+          const localSigs = new Set<string>();
+          for (const g of localGraffitisRef.current) {
+            if (g?.header?.signature) localSigs.add(g.header.signature);
+          }
+          for (const g of remoteGraffitisRef.current) {
+            if (g?.header?.signature) localSigs.add(g.header.signature);
+          }
+
+          const missing = diffInventory(data.signatures, localSigs);
+          if (missing.length > 0) {
+            dc.send(JSON.stringify({
+              type: "request_missing",
+              signatures: missing
+            }));
+            addLog(`[P2P] Requested ${missing.length} missing graffitis from peer ${peerId.substring(0, 8)}.`, "info");
+          } else {
+            addLog(`[P2P] Inventory matching: no missing graffitis from peer ${peerId.substring(0, 8)}.`, "info");
+          }
+        } else if (data.type === "request_missing") {
+          // Step 3: Deliver only requested messages
+          if (!Array.isArray(data.signatures)) {
+            console.warn(`[P2P] Discarding request_missing with non-array signatures from peer ${peerId}`);
+            return;
+          }
+          const allAvailable = [...localGraffitisRef.current, ...remoteGraffitisRef.current];
+          const requested = findGraffitisBySignatures(allAvailable, data.signatures);
+          dc.send(JSON.stringify({
+            type: "sync_response",
+            messages: requested
+          }));
+          addLog(`[P2P] Sent ${requested.length} requested messages to peer ${peerId.substring(0, 8)}.`, "info");
+        } else if (data.type === "request_sync") {
+          // Backwards compatibility with legacy request_sync
           if (typeof data.geohash !== "string" || !data.geohash) {
             console.warn(`[P2P] Discarding request_sync with invalid geohash from peer ${peerId}`);
             return;
@@ -760,20 +864,17 @@ export default function App() {
           let addedCount = 0;
           
           setRemoteGraffitis(prev => {
-            const updated = [...prev];
-            for (const item of incoming) {
-              if (item && typeof item === "object" && verifyMessage(item)) {
-                const itemSig = item.header?.signature;
-                if (!itemSig) continue;
-                const exists = updated.some(g => g?.header?.signature === itemSig) ||
-                               localGraffitisRef.current.some(g => g?.header?.signature === itemSig);
-                if (!exists) {
-                  updated.push(item);
-                  addedCount++;
-                }
-              }
+            const existingSigs = new Set<string>();
+            for (const g of prev) {
+              if (g?.header?.signature) existingSigs.add(g.header.signature);
             }
-            return updated;
+            for (const g of localGraffitisRef.current) {
+              if (g?.header?.signature) existingSigs.add(g.header.signature);
+            }
+
+            const newValidGraffitis = processIncomingGraffitis(incoming, existingSigs);
+            addedCount = newValidGraffitis.length;
+            return [...prev, ...newValidGraffitis];
           });
 
           if (addedCount > 0) {
