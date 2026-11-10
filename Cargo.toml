@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "crates/handshake-core",
+]
+resolver = "2"
