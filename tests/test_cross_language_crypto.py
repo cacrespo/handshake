@@ -177,3 +177,50 @@ def test_end_to_end_bidirectional_signature_verification():
     )
 
     assert py_msg.verify() is True
+
+
+def test_python_verifies_rust_signed_message():
+    """Verify that a message signed by the Rust core engine (handshake-core) verifies in Python."""
+    rust_author_pk_hex = "207a067892821e25d770f1fba0c47c11ff4b813e54162ece9eb839e076231ab6"
+    rust_sig_hex = (
+        "a5e533a0de7f618195f5aea37d6eb95a600023d4f8a2ea375a09d323ec9a13e7"
+        "70fbdb0fe69a7e85b41b0b2197ba3ff18f9cf6adccc872c57c11e35594fb480f"
+    )
+
+    msg = Message(
+        author_pk=bytes.fromhex(rust_author_pk_hex),
+        geohash="69y7p",
+        content="Buenos Aires Graffiti from Rust",
+        timestamp=1712345678.0,
+        signature=bytes.fromhex(rust_sig_hex),
+    )
+
+    assert msg.verify() is True
+
+    # Tampering fails
+    msg.content = "Buenos Aires Graffiti from Rust (TAMPERED)"
+    assert msg.verify() is False
+
+
+CARGO_PATH = shutil.which("cargo") or (Path.home() / ".cargo" / "bin" / "cargo")
+HAS_CARGO = bool(CARGO_PATH and (isinstance(CARGO_PATH, Path) and CARGO_PATH.exists() or shutil.which(str(CARGO_PATH))))
+
+
+@pytest.mark.skipif(not HAS_CARGO, reason="Cargo toolchain not available")
+def test_rust_core_cargo_test_suite():
+    """Executes the Rust core crate unit and vector test suite directly via cargo test."""
+    repo_root = Path(__file__).resolve().parent.parent
+    env = shutil.os.environ.copy()
+    cargo_bin_dir = str(Path.home() / ".cargo" / "bin")
+    env["PATH"] = f"{cargo_bin_dir}:{env.get('PATH', '')}"
+
+    res = subprocess.run(
+        ["cargo", "test", "--package", "handshake-core"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert res.returncode == 0, f"cargo test failed: {res.stdout}\n{res.stderr}"
+    assert "test result: ok." in res.stdout
+

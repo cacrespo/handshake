@@ -10,6 +10,7 @@ Handshake uses modern, reproducible tooling across its Python engine and TypeScr
 
 ### Requirements:
 *   **Python 3.13+** with **[uv](https://docs.astral.sh/uv/)** for fast, deterministic dependency management.
+*   **Rust 1.75+** and **Cargo** for the sovereign native core engine (`crates/handshake-core`).
 *   **Node.js 20+** and **npm** for the web frontend.
 
 ### Quick Start:
@@ -62,13 +63,19 @@ Runs core engine tests, cryptographic signature verification, and cross-language
 uv run pytest
 ```
 
-### 2. Documentation Consistency & Architectural Drift Verifier
+### 2. Rust Core Engine Unit & Vector Tests
+Verifies native cryptographic primitives, RFC 8785 canonical serialization, closed triad schema parsing, and Swarm InfoHash generation:
+```bash
+cargo test
+```
+
+### 3. Documentation Consistency & Architectural Drift Verifier
 Ensures all Markdown links, architectural invariants, relational schemas, and serialization structures remain consistent:
 ```bash
 uv run python scripts/verify_docs_consistency.py
 ```
 
-### 3. Web Client Unit Tests & TypeScript Build
+### 4. Web Client Unit Tests & TypeScript Build
 Verifies web sync logic, storage managers, utility functions, and production compilation:
 ```bash
 cd web
