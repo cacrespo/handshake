@@ -24,35 +24,43 @@ The network is organized around peer-to-peer swarms, sovereign local storage, an
 
 ## Architecture: The Web MVP
 
-We are building a Web-first MVP that leverages browser technologies for a decentralized experience.
+We are building a Web-first MVP that leverages browser technologies for a decentralized, local-first experience.
 
 ```mermaid
 graph TD
-    User((User)) --> WebApp[Web Frontend - Vite/React]
-    WebApp --> DuckDBWasm[DuckDB WASM / IndexedDB]
-    WebApp --> WebRTC[WebRTC P2P Swarm]
-    WebApp --> Tracker[Django Space-Time Tracker]
+    User((User)) --> WebClient[Web Client - React / Vite]
     
-    subgraph "The Swarm & Local Storage"
-        WebRTC <-->|Direct P2P Seeding| OtherPeers[Other Users in the same Zone]
-        DuckDBWasm <-->|Sovereign Storage & Queries| LocalDB[(Local DuckDB Store)]
+    subgraph "Browser Sovereign Sandbox"
+        WebClient --> LocalStore[(Local Sovereign Storage - IndexedDB)]
+        WebClient --> WebRTC[WebRTC DataChannels]
     end
     
-    subgraph "Backend & Engine Infrastructure"
-        Tracker --> Engine[Strata Core Engine - Python / DuckDB]
+    subgraph "Spatial Matchmaking & Swarm Signaling"
+        WebClient <-->|WebSocket Signaling| Tracker[Space-Time Tracker - Django Channels]
+        OtherPeers[Nearby Peers in Swarm] <-->|WebSocket Signaling| Tracker
     end
-    
-    OtherPeers -.->|Signaling| Tracker
+
+    subgraph "Direct Peer-to-Peer Data Exchange"
+        WebRTC <-->|P2P Seeding - handshake-sync| OtherPeers
+    end
+
+    subgraph "Native Reference Engine (Python Stack)"
+        CLI[CLI & Crawler Agents] --> DuckDB[(Embedded DuckDB Store)]
+        CLI --> Strata[Strata Core Engine]
+    end
 ```
 
 ### Key Components
-1. **Django (The Space-Time Tracker):** Django does not act as a centralized database for all messages. Instead, it acts as a **P2P Tracker (similar to a BitTorrent/WebTorrent tracker)**: it never stores messages, but coordinates WebRTC signaling and connects peers exploring the same area on the map.
-2. **Web Frontend (Vite/React + WebRTC):** Provides a rich, premium interface to navigate space and a time-slider to explore the past. Once Django connects you to peers, your browser downloads and seeds the graffitis directly from them via WebRTC.
-3. **DuckDB (Embedded Storage Engine):** Serves as the embedded OLAP database engine both in browser (`@duckdb/duckdb-wasm` over IndexedDB) and backend/CLI (`duckdb` in Python). It powers fast spatial-temporal queries, recursive thread reconstruction, and local storage metabolism.
-4. **Strata (The Agnostic Engine):** The pure-Python core logic (`src/strata`). It handles validation, Ed25519 cryptographic identity, canonical JSON signing, and protocol data structures independent of the transport layer.
+1. **Space-Time Tracker (Django Channels):** Ephemeral matchmaking and WebRTC signaling coordinator. Operating like a BitTorrent/WebTorrent tracker, it connects active peers exploring the same spatial cell (`geohash[:5]`). It enforces a strict zero-persistence boundary: it never stores or indexes messages or user accounts.
+2. **Web Client (React / TypeScript + WebRTC):** Responsive spatial-temporal interface to explore the map (Leaflet) and 3D globe (Three.js). It negotiates direct P2P synchronization over WebRTC DataChannels (`handshake-sync`) and renders conversation threads locally.
+3. **Local Sovereign Storage:** Follows the protocol's engine-agnostic storage specification:
+   - **Web Client:** Uses browser-native **IndexedDB** (`web/src/storage/db.ts`) with zero external dependencies for client-side storage, query filtering, and FIFO metabolism.
+   - **Python Stack:** Uses embedded **DuckDB** (`src/strata/core/storage.py`) for analytical spatial-temporal range queries, recursive CTE thread reconstruction, and background storage metabolism.
+4. **Strata (Core Engine):** Pure-Python reference library (`src/strata`). It handles validation, Ed25519 cryptographic identity, canonical JSON serialization (RFC 8785), and headless node synchronization independent of the transport layer.
 
 ## Documentation
 
 - [Architectural Invariants](docs/architecture-invariants.md): Foundational invariants for identity, space-time anchoring, topology, storage, and P2P sync.
 - [Protocol Specification](docs/protocol.md): Full technical specification covering message schemas, signaling, and data synchronization.
 - [Development & Testing Guide](docs/DEVELOPMENT.md): Local environment setup, running the Tracker & Web client, running test suites, and P2P synchronization verification.
+- [Web Client Documentation](web/README.md): Overview of the frontend architecture, IndexedDB store, WebRTC synchronization, and testing.

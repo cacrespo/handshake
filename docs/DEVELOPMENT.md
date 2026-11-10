@@ -38,7 +38,11 @@ Handshake consists of two primary runtime components for the Web MVP:
 ### Step 1: Start the Tracker Server
 In your first terminal:
 ```bash
-uv run python src/manage.py runserver 0.0.0.0:8000
+# Apply migrations on initial setup if needed
+uv run python tracker/manage.py migrate
+
+# Start the ephemeral matchmaking & signaling server
+uv run python tracker/manage.py runserver 0.0.0.0:8000
 ```
 *The tracker will listen on `ws://localhost:8000/ws/tracker/`.*
 
@@ -48,7 +52,7 @@ In a second terminal:
 cd web
 npm run dev
 ```
-*Open `http://localhost:5173` in your browser.*
+*Open `http://localhost:5173` in your browser (see [Web Client Documentation](../web/README.md) for details).*
 
 ---
 
@@ -72,7 +76,7 @@ uv run python scripts/verify_docs_consistency.py
 Verifies web sync logic, storage managers, utility functions, and production compilation:
 ```bash
 cd web
-npm test -- --run
+npm test
 npm run build
 cd ..
 ```

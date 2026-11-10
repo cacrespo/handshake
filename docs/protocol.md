@@ -36,9 +36,11 @@ All messages on the network are public, open, and immutable. They are serialized
 {
   "version": "1.0",
   "header": {
-    "author_pk": "hex_public_key_32_bytes",
-    "parent_signature": "hex_parent_signature_64_bytes_optional",
-    "signature": "hex_signature_64_bytes"
+    "type": "PUBLIC",
+    "owner_pk": null,
+    "author_pk": "7b8a1c...64_hex_author_pubkey",
+    "parent_signature": null,
+    "signature": "3f9c4a...128_hex_signature"
   },
   "anchor": {
     "timestamp": 1712345678,
@@ -66,8 +68,10 @@ All messages on the network are public, open, and immutable. They are serialized
 ```
 
 ### Fields and Technical Validation Rules:
+*   `header.type` (String, Optional): Message classification (`"PUBLIC"` by default).
+*   `header.owner_pk` (String | null, Optional): Specific recipient or space-owner public key if restricted (`null` for open broadcast).
 *   `header.author_pk` (String, Required): 64-character hexadecimal representation of the author's 32-byte Ed25519 public key. Nodes MUST verify that it decodes to exactly 32 bytes and represents a valid Ed25519 curve point.
-*   `header.parent_signature` (String | null, Optional): 128-character hexadecimal string representing the Ed25519 signature of the parent message being replied to (`null` if initiating a new root conversation). Nodes use this field to construct conversation trees without enforcing that author or location match the parent message.
+*   `header.parent_signature` (String | null, Optional): 128-character hexadecimal string representing the 64-byte Ed25519 signature of the parent message being replied to (`null` if initiating a new root conversation). Nodes use this field to construct conversation trees without enforcing that author or location match the parent message.
 *   `header.signature` (String, Required): 128-character hexadecimal Ed25519 signature computed over the canonical serialized JSON payload (RFC 8785) excluding this field itself.
 *   `anchor.timestamp` (Integer, Required): 64-bit signed integer UNIX timestamp (seconds). **Validation Rule:** Nodes and trackers MUST NOT reject messages based on clock skew or future/past offsets (declarative time). Validity is governed solely by cryptographic signature integrity over the canonical payload.
 *   `anchor.geohash` (String, Required): Canonical Geohash string (precision 6 or 7) derived from coordinates. Nodes MUST verify that `anchor.geohash` matches the geographic bounds of `anchor.coordinates`.
@@ -161,6 +165,8 @@ Broadcast by the Tracker to all active peers in the same spatial room when a pee
 
 #### 4. Peer Connection Signaling Relay (`signal`)
 Relayed transparently as an opaque payload through the Tracker to negotiate direct P2P transport between peers (using standard WebRTC SDP offer/answer and ICE candidate schemas as the reference standard for browser swarms):
+
+##### Client Outbound Payload (Sent to Tracker):
 ```json
 // SDP Offer / Answer
 {
@@ -184,6 +190,17 @@ Relayed transparently as an opaque payload through the Tracker to negotiate dire
       "sdpMid": "0",
       "sdpMLineIndex": 0
     }
+  }
+}
+```
+
+##### Client Inbound Relayed Payload (Delivered by Tracker to Target Peer):
+```json
+{
+  "type": "signal",
+  "sender": "origin_peer_id",
+  "signal": {
+    "sdp": { ... } // or { "candidate": { ... } }
   }
 }
 ```
@@ -229,6 +246,8 @@ Sent in response to `request_missing` (delivering only requested messages), or b
     {
       "version": "1.0",
       "header": {
+        "type": "PUBLIC",
+        "owner_pk": null,
         "author_pk": "7b8a1c...",
         "parent_signature": null,
         "signature": "3f9c4a..."
