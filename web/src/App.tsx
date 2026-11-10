@@ -1,15 +1,31 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Circle } from "react-leaflet";
 import L from "leaflet";
 import nacl from "tweetnacl";
 import {
-  Folder, RefreshCw, Upload, Download, MapPin,
-  Clock, Send, Layers, Moon, Sun, Globe, Satellite,
-  Settings, Plus, X, Copy, Check, Shield, HardDrive, Terminal, MessageSquarePlus,
-  Radio, Activity, Navigation
+  Folder,
+  RefreshCw,
+  Upload,
+  Download,
+  MapPin,
+  Clock,
+  Send,
+  Radio,
+  Activity,
+  Navigation,
+  Globe,
+  Plus,
+  Settings,
+  Shield,
+  HardDrive,
+  Terminal,
+  MessageSquarePlus,
+  X,
+  Copy,
+  Check,
+  MessageSquare,
 } from "lucide-react";
+
 import "./App.css";
-import GlobeView, { type GlobeMarker } from "./GlobeView";
 
 // Fix Leaflet marker icons in Vite/React
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -31,14 +47,15 @@ import {
   utf8ToBytes,
   signTrackerRegistration,
   getMessageTimestamp,
-  getMessageGeohash
+  getMessageGeohash,
 } from "./utils";
+
 import {
   filterSignaturesByGeohash,
   diffInventory,
   findGraffitisBySignatures,
   processIncomingGraffitis,
-  type InventoryMessage
+  type InventoryMessage,
 } from "./sync";
 
 import {
@@ -49,77 +66,17 @@ import {
   togglePin as dbTogglePin,
   saveContact,
   getContacts,
-  deleteContact
+  deleteContact,
 } from "./storage/db";
 
+import {
+  queryMessages,
+  type TemporalFilter,
+} from "./storage/query";
 
-
-function getDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371e3; // metres
-  const phi1 = lat1 * Math.PI / 180;
-  const phi2 = lat2 * Math.PI / 180;
-  const deltaPhi = (lat2 - lat1) * Math.PI / 180;
-  const deltaLambda = (lon2 - lon1) * Math.PI / 180;
-
-  const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
-    Math.cos(phi1) * Math.cos(phi2) *
-    Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return R * c; // in metres
-}
-
-function getAuthorAvatar(pubkey: string) {
-  if (!pubkey) return { bg: "#3b82f6", initials: "??", snippet: "anon" };
-  let hash = 0;
-  for (let i = 0; i < pubkey.length; i++) {
-    hash = pubkey.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue1 = Math.abs(hash % 360);
-  const hue2 = (hue1 + 50) % 360;
-  const initials = pubkey.substring(0, 2).toUpperCase();
-  const bg = `linear-gradient(135deg, hsl(${hue1}, 75%, 48%), hsl(${hue2}, 85%, 38%))`;
-  return { bg, initials, snippet: pubkey.substring(0, 8) };
-}
-
-// Map updater component to sync viewport with smooth flyTo
-function MapController({ center, target }: { center: [number, number]; target: [number, number] | null }) {
-  const map = useMap();
-  useEffect(() => {
-    if (target) {
-      map.flyTo(target, 15, { animate: true, duration: 1.5 });
-    } else {
-      map.setView(center, map.getZoom());
-    }
-  }, [center, target, map]);
-  return null;
-}
-
-// Map events handler to sync coords state on click
-function MapEventsTracker({
-  onClick,
-  onClearTarget,
-  onZoomOutToGlobe
-}: {
-  onClick: (lat: number, lon: number) => void;
-  onClearTarget: () => void;
-  onZoomOutToGlobe?: () => void;
-}) {
-  useMapEvents({
-    click: (e) => {
-      onClick(e.latlng.lat, e.latlng.lng);
-    },
-    movestart: () => {
-      onClearTarget();
-    },
-    zoomend: (e) => {
-      if (onZoomOutToGlobe && e.target.getZoom() <= 3) {
-        onZoomOutToGlobe();
-      }
-    }
-  });
-  return null;
-}
+import SpatialRadar from "./components/SpatialRadar";
+import MessageStream from "./components/MessageStream";
+import TemporalHorizon from "./components/TemporalHorizon";
 
 interface LogEntry {
   text: string;
@@ -132,155 +89,51 @@ interface PeerInfo {
   geohash: string;
 }
 
-type MapStyle = "clean_light" | "comic" | "streets_hd" | "satellite" | "dark_gray";
-
-interface MapStyleConfig {
-  id: MapStyle;
-  label: string;
-  url: string;
-  attribution: string;
-  maxZoom: number;
-}
-
-const MAP_STYLES: Record<MapStyle, MapStyleConfig> = {
-  clean_light: {
-    id: "clean_light",
-    label: "Minimalista Claro (Limpio)",
-    url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-    attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
-    maxZoom: 16,
-  },
-  comic: {
-    id: "comic",
-    label: "Estilo Cómic / Ilustración",
-    url: "https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, Tiles by <a href="https://www.hotosm.org/">HOT</a>',
-    maxZoom: 19,
-  },
-  streets_hd: {
-    id: "streets_hd",
-    label: "Calles HD (Esri)",
-    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
-    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS',
-    maxZoom: 19,
-  },
-  satellite: {
-    id: "satellite",
-    label: "Satélite HD (Esri)",
-    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS',
-    maxZoom: 19,
-  },
-  dark_gray: {
-    id: "dark_gray",
-    label: "Dark Canvas (Esri)",
-    url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-    attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
-    maxZoom: 16,
-  },
-};
-
 export default function App() {
+  // 1. Geographic & Location State
   const [coords, setCoords] = useState<[number, number]>([-34.6037, -58.3816]);
   const [gpsCoords, setGpsCoords] = useState<[number, number] | null>(null);
-  const [viewMode, setViewMode] = useState<"globe" | "map">("globe");
-  const [composerLocationMode, setComposerLocationMode] = useState<"parent" | "gps" | "picked">("picked");
   const [geohash, setGeohash] = useState<string>("");
+
+  // 2. Space-Time Triad Coordinated Filter State
+  const [selectedGeohash, setSelectedGeohash] = useState<string | null>(null);
+  const [temporalFilter, setTemporalFilter] = useState<TemporalFilter>({ dimension: "all" });
+  const [activeGraffitiId, setActiveGraffitiId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [categoryFilter, setCategoryFilter] = useState<"all" | "trusted" | "local" | "pinned" | "mine">("all");
+  const [mobileTab, setMobileTab] = useState<"messages" | "radar" | "timeline">("messages");
+
+  // 3. Cryptographic Identity & Sovereign Storage State
   const [publicKey, setPublicKey] = useState<string>("");
   const [secretKey, setSecretKey] = useState<string>("");
   const [folderName, setFolderName] = useState<string>("");
+  const [folderHandle, setFolderHandle] = useState<any>(null);
   const [localGraffitis, setLocalGraffitis] = useState<any[]>([]);
   const [remoteGraffitis, setRemoteGraffitis] = useState<any[]>([]);
+  const [trustedAuthors, setTrustedAuthors] = useState<string[]>([]);
+  const [pinnedSignatures, setPinnedSignatures] = useState<Set<string>>(new Set());
+
+  // 4. Network, Signaling & Swarm State
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [wsStatus, setWsStatus] = useState<"connected" | "disconnected" | "connecting">("disconnected");
   const [connectedPeers, setConnectedPeers] = useState<PeerInfo[]>([]);
-  const [dayOffset, setDayOffset] = useState<number>(0);
-  const [mapStyle, setMapStyle] = useState<MapStyle>("clean_light");
-  const [showStyleMenu, setShowStyleMenu] = useState<boolean>(false);
-  const [writeTimeMode, setWriteTimeMode] = useState<"slider" | "now" | "custom">("slider");
-  const [customWriteDate, setCustomWriteDate] = useState<string>("");
-  const [viewAllDays, setViewAllDays] = useState<boolean>(false);
 
-  const getDayRange = (offset: number) => {
-    const d = new Date();
-    d.setDate(d.getDate() + offset);
-    const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0);
-    const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59);
-    return {
-      start: Math.floor(start.getTime() / 1000),
-      end: Math.floor(end.getTime() / 1000)
-    };
-  };
-
-  const getSelectedDayText = (offset: number) => {
-    if (offset === 0) return "Hoy";
-    if (offset === -1) return "Ayer";
-    if (offset === 1) return "Mañana";
-    const d = new Date();
-    d.setDate(d.getDate() + offset);
-    return d.toLocaleDateString("es-AR", { weekday: 'long', day: 'numeric', month: 'long' });
-  };
-
-  const getTargetTimestamp = (): number => {
-    if (writeTimeMode === "custom" && customWriteDate) {
-      return Math.floor(new Date(customWriteDate).getTime() / 1000);
-    }
-    if (writeTimeMode === "slider" && dayOffset !== 0) {
-      const d = new Date();
-      d.setDate(d.getDate() + dayOffset);
-      return Math.floor(d.getTime() / 1000);
-    }
-    return Math.floor(Date.now() / 1000);
-  };
-
-  const getTargetTimeLabel = (): string => {
-    if (writeTimeMode === "custom" && customWriteDate) {
-      return new Date(customWriteDate).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
-    }
-    if (writeTimeMode === "slider") {
-      if (dayOffset === 0) return "Hoy (Ahora)";
-      return `${getSelectedDayText(dayOffset)} (${dayOffset > 0 ? `+${dayOffset}d` : `${dayOffset}d`})`;
-    }
-    return "Ahora (Tiempo Real)";
-  };
-  const [newGraffitiContent, setNewGraffitiContent] = useState("");
-  const [replyingTo, setReplyingTo] = useState<any | null>(null);
-  const getComposerActiveCoords = (): [number, number] => {
-    if (composerLocationMode === "parent" && replyingTo) {
-      try {
-        const gh = getMessageGeohash(replyingTo);
-        const decoded = decodeGeohash(gh);
-        return [decoded.lat, decoded.lon];
-      } catch (e) {
-        return coords;
-      }
-    }
-    if (composerLocationMode === "gps" && gpsCoords) {
-      return gpsCoords;
-    }
-    return coords;
-  };
-
-  const activeComposerCoords = getComposerActiveCoords();
-  const activeComposerGeohash = encodeGeohash(activeComposerCoords[0], activeComposerCoords[1]);
-
-  const [trustedAuthors, setTrustedAuthors] = useState<string[]>([]);
-  const [pinnedSignatures, setPinnedSignatures] = useState<Set<string>>(new Set());
-  const [mapTarget, setMapTarget] = useState<[number, number] | null>(null);
+  // 5. Modals State
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"identity" | "storage" | "network">("identity");
   const [copiedKey, setCopiedKey] = useState(false);
-  const [folderHandle, setFolderHandle] = useState<any>(null);
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedKey(true);
-    setTimeout(() => setCopiedKey(false), 2000);
-    addLog("Clave pública copiada al portapapeles.", "info");
-  };
+  // 6. Composer Form State
+  const [newGraffitiContent, setNewGraffitiContent] = useState("");
+  const [replyingTo, setReplyingTo] = useState<any | null>(null);
+  const [composerLocationMode, setComposerLocationMode] = useState<"parent" | "gps" | "picked">("picked");
+  const [writeTimeMode, setWriteTimeMode] = useState<"slider" | "now" | "custom">("slider");
+  const [composerDayOffset, setComposerDayOffset] = useState<number>(0);
+  const [customWriteDate, setCustomWriteDate] = useState<string>("");
 
+  // Refs for WebRTC loops
   const ws = useRef<WebSocket | null>(null);
   const pcs = useRef<{ [peerId: string]: RTCPeerConnection }>({});
   const dataChannels = useRef<{ [peerId: string]: RTCDataChannel }>({});
@@ -289,7 +142,6 @@ export default function App() {
   const geohashRef = useRef<string>("");
   const pendingCandidates = useRef<{ [peerId: string]: any[] }>({});
 
-  // Keep refs up to date for async loops and WebRTC event handlers
   useEffect(() => {
     localGraffitisRef.current = localGraffitis;
   }, [localGraffitis]);
@@ -304,9 +156,17 @@ export default function App() {
 
   const addLog = (text: string, type: "info" | "success" | "warning" | "danger" = "info") => {
     const timestamp = new Date().toLocaleTimeString();
-    setLogs(prev => [{ text, type, timestamp }, ...prev].slice(0, 100));
+    setLogs((prev) => [{ text, type, timestamp }, ...prev].slice(0, 100));
   };
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(true);
+    setTimeout(() => setCopiedKey(false), 2000);
+    addLog("Clave pública copiada al portapapeles.", "info");
+  };
+
+  // Identity generation
   const generateNewIdentity = (): string => {
     const kp = nacl.sign.keyPair();
     const pubHex = toHex(kp.publicKey);
@@ -319,6 +179,7 @@ export default function App() {
     return pubHex;
   };
 
+  // Load persisted messages and contacts from IndexedDB
   const loadPersistedData = async (activePubKey: string) => {
     try {
       await initDB();
@@ -326,7 +187,7 @@ export default function App() {
       // 1. Load contacts
       const storedContacts = await getContacts();
       if (storedContacts && storedContacts.length > 0) {
-        setTrustedAuthors(storedContacts.map(c => c.public_key));
+        setTrustedAuthors(storedContacts.map((c) => c.public_key));
       } else {
         const storedTrust = localStorage.getItem("handshake_trust");
         if (storedTrust) {
@@ -364,14 +225,17 @@ export default function App() {
         setLocalGraffitis(locals);
         setRemoteGraffitis(remotes);
         setPinnedSignatures(pinned);
-        addLog(`Cargados ${storedMsgs.length} mensajes desde almacenamiento local soberano (IndexedDB).`, "success");
+        addLog(
+          `Cargados ${storedMsgs.length} mensajes desde almacenamiento local soberano (IndexedDB).`,
+          "success"
+        );
       }
     } catch (err: any) {
       console.error("Error loading persisted data from IndexedDB:", err);
     }
   };
 
-  // 1. Initialize Cryptographic Identity (Ed25519) and Sovereign Storage (IndexedDB)
+  // Mount initialization: Identity, Storage, Geolocation
   useEffect(() => {
     const storedSec = localStorage.getItem("handshake_seckey");
     let activePubHex = "";
@@ -397,7 +261,7 @@ export default function App() {
 
     loadPersistedData(activePubHex);
 
-    // Try to get GPS
+    // Initial GPS resolution
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
@@ -470,18 +334,18 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  // 2. Select Local Folder (File System Access API)
+  // Local filesystem folder linking
   const selectLocalFolder = async () => {
     try {
       const handle = await (window as any).showDirectoryPicker();
       setFolderHandle(handle);
       setFolderName(handle.name);
       addLog(`Folder selected: '${handle.name}'. Scanning for graffitis...`, "info");
-      
+
       const graffitis = await readDirectoryRecursive(handle);
       setLocalGraffitis(graffitis);
       addLog(`Found ${graffitis.length} valid local graffitis. Seeding started!`, "success");
-      
+
       if (ws.current && ws.current.readyState === WebSocket.OPEN) {
         announcePresence();
       }
@@ -516,7 +380,7 @@ export default function App() {
     return list;
   }
 
-  // Helper to cleanly close and remove all WebRTC and DataChannel resources for a peer (SEC-04)
+  // Cleanup WebRTC resources
   const cleanupPeer = (targetPeerId: string) => {
     const pc = pcs.current[targetPeerId];
     if (pc) {
@@ -537,10 +401,10 @@ export default function App() {
       }
     }
     delete pendingCandidates.current[targetPeerId];
-    setConnectedPeers(prev => prev.filter(p => p.peer_id !== targetPeerId));
+    setConnectedPeers((prev) => prev.filter((p) => p.peer_id !== targetPeerId));
   };
 
-  // 3. Connect to Tracker WebSocket
+  // Tracker signaling WebSocket connection
   const connectTracker = () => {
     if (ws.current) {
       ws.current.close();
@@ -548,7 +412,7 @@ export default function App() {
 
     setWsStatus("connecting");
     addLog("Connecting to Django Tracker signaling server...", "info");
-    
+
     const socket = new WebSocket("ws://localhost:8000/ws/tracker/");
     ws.current = socket;
 
@@ -561,7 +425,7 @@ export default function App() {
     socket.onclose = () => {
       setWsStatus("disconnected");
       addLog("Disconnected from Django Tracker.", "danger");
-      Object.keys(pcs.current).forEach(id => {
+      Object.keys(pcs.current).forEach((id) => {
         cleanupPeer(id);
       });
       setConnectedPeers([]);
@@ -576,7 +440,7 @@ export default function App() {
     socket.onmessage = async (event) => {
       try {
         const data = JSON.parse(event.data);
-        
+
         if (data.type === "peer_list") {
           addLog(`Received peer match list. Found ${data.peers.length} active neighbors.`, "info");
           setConnectedPeers(data.peers);
@@ -587,8 +451,8 @@ export default function App() {
           }
         } else if (data.type === "peer_joined") {
           addLog(`Peer entered our zone: ${data.peer_id.substring(0, 8)}...`, "info");
-          setConnectedPeers(prev => {
-            if (prev.some(p => p.peer_id === data.peer_id)) return prev;
+          setConnectedPeers((prev) => {
+            if (prev.some((p) => p.peer_id === data.peer_id)) return prev;
             return [...prev, { peer_id: data.peer_id, geohash: data.geohash }];
           });
           if (publicKey < data.peer_id) {
@@ -615,32 +479,33 @@ export default function App() {
       const timestamp = Math.floor(Date.now() / 1000);
       const signature = signTrackerRegistration(publicKey, geohash, timestamp, secretKey);
       addLog(`Registering authenticated presence with Geohash: ${geohash}`, "info");
-      ws.current.send(JSON.stringify({
-        type: "register",
-        peer_id: publicKey,
-        geohash: geohash,
-        timestamp: timestamp,
-        signature: signature
-      }));
+      ws.current.send(
+        JSON.stringify({
+          type: "register",
+          peer_id: publicKey,
+          geohash: geohash,
+          timestamp: timestamp,
+          signature: signature,
+        })
+      );
     } catch (err) {
       console.error("Failed to sign presence challenge:", err);
       addLog("Failed to sign presence challenge.", "danger");
     }
   };
 
-  // Trigger registration update on coordinates change
   useEffect(() => {
     if (wsStatus === "connected") {
       announcePresence();
     }
   }, [geohash]);
 
-  // 4. WebRTC P2P Swarming
+  // WebRTC P2P Swarming
   const initiatePeerConnection = async (targetPeerId: string) => {
     addLog(`[P2P] Connecting to peer: ${targetPeerId.substring(0, 8)}...`, "info");
-    
+
     const pc = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
     });
 
     pcs.current[targetPeerId] = pc;
@@ -648,7 +513,10 @@ export default function App() {
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
       if (state === "disconnected" || state === "failed" || state === "closed") {
-        addLog(`[P2P] Connection with ${targetPeerId.substring(0, 8)} changed to ${state}. Cleaning up.`, "warning");
+        addLog(
+          `[P2P] Connection with ${targetPeerId.substring(0, 8)} changed to ${state}. Cleaning up.`,
+          "warning"
+        );
         cleanupPeer(targetPeerId);
       }
     };
@@ -656,18 +524,23 @@ export default function App() {
     pc.oniceconnectionstatechange = () => {
       const state = pc.iceConnectionState;
       if (state === "disconnected" || state === "failed" || state === "closed") {
-        addLog(`[P2P] ICE connection with ${targetPeerId.substring(0, 8)} changed to ${state}. Cleaning up.`, "warning");
+        addLog(
+          `[P2P] ICE connection with ${targetPeerId.substring(0, 8)} changed to ${state}. Cleaning up.`,
+          "warning"
+        );
         cleanupPeer(targetPeerId);
       }
     };
 
     pc.onicecandidate = (event) => {
       if (event.candidate && ws.current) {
-        ws.current.send(JSON.stringify({
-          type: "signal",
-          target: targetPeerId,
-          signal: { candidate: event.candidate }
-        }));
+        ws.current.send(
+          JSON.stringify({
+            type: "signal",
+            target: targetPeerId,
+            signal: { candidate: event.candidate },
+          })
+        );
       }
     };
 
@@ -678,13 +551,15 @@ export default function App() {
     try {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      
+
       if (ws.current) {
-        ws.current.send(JSON.stringify({
-          type: "signal",
-          target: targetPeerId,
-          signal: { sdp: offer }
-        }));
+        ws.current.send(
+          JSON.stringify({
+            type: "signal",
+            target: targetPeerId,
+            signal: { sdp: offer },
+          })
+        );
       }
     } catch (err) {
       console.error("Error creating WebRTC offer:", err);
@@ -694,9 +569,7 @@ export default function App() {
 
   const handleIncomingSignal = async (sender: string, signal: any) => {
     let pc: RTCPeerConnection | null | undefined = pcs.current[sender];
-    
-    // Si recibimos una oferta (offer), significa que se inicia una nueva negociación.
-    // Descartamos cualquier conexión vieja o rota con ese peer para empezar de cero.
+
     if (pc && signal.sdp && signal.sdp.type === "offer") {
       cleanupPeer(sender);
       pc = null;
@@ -705,7 +578,7 @@ export default function App() {
     if (!pc) {
       addLog(`[P2P] Initializing connection response to: ${sender.substring(0, 8)}...`, "info");
       const newPc = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
       });
       pc = newPc;
       pcs.current[sender] = newPc;
@@ -713,7 +586,10 @@ export default function App() {
       newPc.onconnectionstatechange = () => {
         const state = newPc.connectionState;
         if (state === "disconnected" || state === "failed" || state === "closed") {
-          addLog(`[P2P] Connection with ${sender.substring(0, 8)} changed to ${state}. Cleaning up.`, "warning");
+          addLog(
+            `[P2P] Connection with ${sender.substring(0, 8)} changed to ${state}. Cleaning up.`,
+            "warning"
+          );
           cleanupPeer(sender);
         }
       };
@@ -721,18 +597,23 @@ export default function App() {
       newPc.oniceconnectionstatechange = () => {
         const state = newPc.iceConnectionState;
         if (state === "disconnected" || state === "failed" || state === "closed") {
-          addLog(`[P2P] ICE connection with ${sender.substring(0, 8)} changed to ${state}. Cleaning up.`, "warning");
+          addLog(
+            `[P2P] ICE connection with ${sender.substring(0, 8)} changed to ${state}. Cleaning up.`,
+            "warning"
+          );
           cleanupPeer(sender);
         }
       };
 
       newPc.onicecandidate = (event) => {
         if (event.candidate && ws.current) {
-          ws.current.send(JSON.stringify({
-            type: "signal",
-            target: sender,
-            signal: { candidate: event.candidate }
-          }));
+          ws.current.send(
+            JSON.stringify({
+              type: "signal",
+              target: sender,
+              signal: { candidate: event.candidate },
+            })
+          );
         }
       };
 
@@ -752,15 +633,16 @@ export default function App() {
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           if (ws.current) {
-            ws.current.send(JSON.stringify({
-              type: "signal",
-              target: sender,
-              signal: { sdp: answer }
-            }));
+            ws.current.send(
+              JSON.stringify({
+                type: "signal",
+                target: sender,
+                signal: { sdp: answer },
+              })
+            );
           }
         }
 
-        // Process any queued candidates
         const queue = pendingCandidates.current[sender] || [];
         for (const candidate of queue) {
           try {
@@ -792,7 +674,7 @@ export default function App() {
     const msg: InventoryMessage = {
       type: "inventory",
       geohash: targetGeohash,
-      signatures
+      signatures,
     };
     try {
       dc.send(JSON.stringify(msg));
@@ -808,10 +690,10 @@ export default function App() {
     const msg: InventoryMessage = {
       type: "inventory",
       geohash: targetGeohash,
-      signatures
+      signatures,
     };
     const payload = JSON.stringify(msg);
-    Object.values(dataChannels.current).forEach(dc => {
+    Object.values(dataChannels.current).forEach((dc) => {
       if (dc.readyState === "open") {
         try {
           dc.send(payload);
@@ -822,7 +704,6 @@ export default function App() {
     });
   };
 
-  // Broadcast inventory when geohash/viewport changes
   useEffect(() => {
     if (geohash) {
       broadcastInventory(geohash);
@@ -865,7 +746,6 @@ export default function App() {
         }
 
         if (data.type === "inventory") {
-          // Step 2: Compare incoming signatures with local collection and request missing
           if (typeof data.geohash !== "string" || !data.geohash || !Array.isArray(data.signatures)) {
             console.warn(`[P2P] Discarding invalid inventory from peer ${peerId}`);
             return;
@@ -880,41 +760,45 @@ export default function App() {
 
           const missing = diffInventory(data.signatures, localSigs);
           if (missing.length > 0) {
-            dc.send(JSON.stringify({
-              type: "request_missing",
-              signatures: missing
-            }));
+            dc.send(
+              JSON.stringify({
+                type: "request_missing",
+                signatures: missing,
+              })
+            );
             addLog(`[P2P] Requested ${missing.length} missing graffitis from peer ${peerId.substring(0, 8)}.`, "info");
           } else {
             addLog(`[P2P] Inventory matching: no missing graffitis from peer ${peerId.substring(0, 8)}.`, "info");
           }
         } else if (data.type === "request_missing") {
-          // Step 3: Deliver only requested messages
           if (!Array.isArray(data.signatures)) {
             console.warn(`[P2P] Discarding request_missing with non-array signatures from peer ${peerId}`);
             return;
           }
           const allAvailable = [...localGraffitisRef.current, ...remoteGraffitisRef.current];
           const requested = findGraffitisBySignatures(allAvailable, data.signatures);
-          dc.send(JSON.stringify({
-            type: "sync_response",
-            messages: requested
-          }));
+          dc.send(
+            JSON.stringify({
+              type: "sync_response",
+              messages: requested,
+            })
+          );
           addLog(`[P2P] Sent ${requested.length} requested messages to peer ${peerId.substring(0, 8)}.`, "info");
         } else if (data.type === "request_sync") {
-          // Backwards compatibility with legacy request_sync
           if (typeof data.geohash !== "string" || !data.geohash) {
             console.warn(`[P2P] Discarding request_sync with invalid geohash from peer ${peerId}`);
             return;
           }
           const targetPrefix = data.geohash.substring(0, 5);
-          const filtered = localGraffitisRef.current.filter(g => 
-            g && getMessageGeohash(g).startsWith(targetPrefix)
+          const filtered = localGraffitisRef.current.filter(
+            (g) => g && getMessageGeohash(g).startsWith(targetPrefix)
           );
-          dc.send(JSON.stringify({
-            type: "sync_response",
-            messages: filtered
-          }));
+          dc.send(
+            JSON.stringify({
+              type: "sync_response",
+              messages: filtered,
+            })
+          );
           addLog(`[P2P] Sent ${filtered.length} local messages to peer.`, "info");
         } else if (data.type === "sync_response") {
           const incoming = data.messages || data.graffitis;
@@ -924,8 +808,8 @@ export default function App() {
           }
           let addedCount = 0;
           const newlyAdded: any[] = [];
-          
-          setRemoteGraffitis(prev => {
+
+          setRemoteGraffitis((prev) => {
             const existingSigs = new Set<string>();
             for (const g of prev) {
               if (g?.header?.signature) existingSigs.add(g.header.signature);
@@ -940,9 +824,8 @@ export default function App() {
             return [...prev, ...newValidGraffitis];
           });
 
-          // Persist verified incoming messages to IndexedDB (Pillar 4)
           if (newlyAdded.length > 0) {
-            saveMessages(newlyAdded).catch(err => {
+            saveMessages(newlyAdded).catch((err) => {
               console.error("Error persisting incoming messages to IndexedDB:", err);
             });
           }
@@ -952,8 +835,6 @@ export default function App() {
           } else {
             addLog("[P2P] Sync finished (no new graffitis found).", "info");
           }
-        } else {
-          console.warn(`[P2P] Discarded unexpected message type '${data.type}' from peer ${peerId}`);
         }
       } catch (err) {
         console.error("Error processing P2P message:", err);
@@ -961,7 +842,163 @@ export default function App() {
     };
   };
 
-  // 5. Add / Create new Graffiti (Write & Sign in browser)
+  // 5. Pin / Trust Handlers
+  const handleTogglePin = async (signature: string) => {
+    if (!signature) return;
+    const isCurrentlyPinned = pinnedSignatures.has(signature);
+    const nextState = !isCurrentlyPinned;
+
+    setPinnedSignatures((prev) => {
+      const next = new Set(prev);
+      if (nextState) {
+        next.add(signature);
+      } else {
+        next.delete(signature);
+      }
+      return next;
+    });
+
+    setLocalGraffitis((prev) =>
+      prev.map((g) => (g.header?.signature === signature ? { ...g, is_pinned: nextState ? 1 : 0 } : g))
+    );
+    setRemoteGraffitis((prev) =>
+      prev.map((g) => (g.header?.signature === signature ? { ...g, is_pinned: nextState ? 1 : 0 } : g))
+    );
+
+    try {
+      await dbTogglePin(signature, nextState);
+      addLog(
+        nextState ? "Graffiti fijado en tu memoria local (IndexedDB)." : "Graffiti desfijado.",
+        "info"
+      );
+    } catch (err: any) {
+      console.error("Error toggling pin in IndexedDB:", err);
+      addLog(`Error al fijar/desfijar mensaje: ${err.message}`, "danger");
+    }
+  };
+
+  const toggleTrust = async (authorPk: string) => {
+    const isCurrentlyTrusted = trustedAuthors.includes(authorPk);
+    const updated = isCurrentlyTrusted
+      ? trustedAuthors.filter((pk) => pk !== authorPk)
+      : [...trustedAuthors, authorPk];
+    setTrustedAuthors(updated);
+    localStorage.setItem("handshake_trust", JSON.stringify(updated));
+
+    try {
+      if (isCurrentlyTrusted) {
+        await deleteContact(authorPk);
+      } else {
+        await saveContact({
+          public_key: authorPk,
+          alias: authorPk.substring(0, 8),
+          added_at: Date.now(),
+        });
+      }
+    } catch (err: any) {
+      console.error("Error updating contact in IndexedDB:", err);
+    }
+
+    addLog(
+      isCurrentlyTrusted
+        ? `Removed author ${authorPk.substring(0, 8)} from trust network.`
+        : `Handshaked & Trusted author ${authorPk.substring(0, 8)}!`,
+      "success"
+    );
+  };
+
+  const saveAndSeedMessage = async (graf: any) => {
+    try {
+      await saveMessage({ ...graf, is_local: true });
+    } catch (err: any) {
+      console.error("Error saving message to IndexedDB:", err);
+    }
+
+    setLocalGraffitis((prev) => {
+      if (prev.some((g) => g.header?.signature === graf.header?.signature)) return prev;
+      return [...prev, graf];
+    });
+    setRemoteGraffitis((prev) => prev.filter((g) => g.header?.signature !== graf.header?.signature));
+
+    if (!folderHandle) {
+      addLog("Graffiti persistido en almacenamiento local soberano (IndexedDB).", "success");
+      return;
+    }
+
+    try {
+      const grafTs = getMessageTimestamp(graf);
+      const grafGh = getMessageGeohash(graf);
+      const dt = new Date(grafTs * 1000);
+      const epoch = `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}`;
+      const baseStr = `${grafGh}:${epoch}`;
+      const data = new TextEncoder().encode(baseStr);
+      const hashBuffer = await crypto.subtle.digest("SHA-1", data);
+      const infoHashHex = Array.from(new Uint8Array(hashBuffer))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+
+      const subDirHandle = await folderHandle.getDirectoryHandle(infoHashHex, { create: true });
+      const filename = `${grafTs}_${graf.header.author_pk.substring(0, 8)}.msg`;
+
+      const fileHandle = await subDirHandle.getFileHandle(filename, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(JSON.stringify(graf, null, 2));
+      await writable.close();
+
+      addLog(`Graffiti guardado en carpeta local y seedeando: ${filename}`, "success");
+    } catch (err: any) {
+      addLog(`Error al guardar graffiti en carpeta local: ${err.message}`, "danger");
+    }
+  };
+
+  // 6. Composer Target Coordinates and Timestamp Calculation
+  const getComposerActiveCoords = (): [number, number] => {
+    if (composerLocationMode === "parent" && replyingTo) {
+      try {
+        const gh = getMessageGeohash(replyingTo);
+        const decoded = decodeGeohash(gh);
+        return [decoded.lat, decoded.lon];
+      } catch {
+        return coords;
+      }
+    }
+    if (composerLocationMode === "gps" && gpsCoords) {
+      return gpsCoords;
+    }
+    return coords;
+  };
+
+  const activeComposerCoords = getComposerActiveCoords();
+  const activeComposerGeohash = encodeGeohash(activeComposerCoords[0], activeComposerCoords[1]);
+
+  const getTargetTimestamp = (): number => {
+    if (writeTimeMode === "custom" && customWriteDate) {
+      return Math.floor(new Date(customWriteDate).getTime() / 1000);
+    }
+    if (writeTimeMode === "slider" && composerDayOffset !== 0) {
+      const d = new Date();
+      d.setDate(d.getDate() + composerDayOffset);
+      return Math.floor(d.getTime() / 1000);
+    }
+    return Math.floor(Date.now() / 1000);
+  };
+
+  const getTargetTimeLabel = (): string => {
+    if (writeTimeMode === "custom" && customWriteDate) {
+      return new Date(customWriteDate).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
+    }
+    if (writeTimeMode === "slider") {
+      if (composerDayOffset === 0) return "Hoy (Ahora)";
+      const d = new Date();
+      d.setDate(d.getDate() + composerDayOffset);
+      return `${d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })} (${
+        composerDayOffset > 0 ? `+${composerDayOffset}d` : `${composerDayOffset}d`
+      })`;
+    }
+    return "Ahora (Tiempo Real)";
+  };
+
+  // 7. Create and Sign Message
   const handleCreateGraffiti = async () => {
     if (!newGraffitiContent.trim()) return;
     if (!publicKey || !secretKey) {
@@ -978,23 +1015,23 @@ export default function App() {
         type: "PUBLIC",
         owner_pk: null,
         author_pk: publicKey,
-        parent_signature: replyingTo ? replyingTo.header.signature : null,
+        parent_signature: replyingTo ? replyingTo.header?.signature || replyingTo.signature : null,
       },
       anchor: {
         timestamp: targetTimestamp,
         geohash: activeComposerGeohash,
         coordinates: {
           lat: Number(activeComposerCoords[0].toFixed(6)),
-          lon: Number(activeComposerCoords[1].toFixed(6))
+          lon: Number(activeComposerCoords[1].toFixed(6)),
         },
         proof: {
           type: "GPS",
-          data: `${activeComposerCoords[0].toFixed(6)},${activeComposerCoords[1].toFixed(6)}`
-        }
+          data: `${activeComposerCoords[0].toFixed(6)},${activeComposerCoords[1].toFixed(6)}`,
+        },
       },
       content: {
-        text: newGraffitiContent
-      }
+        text: newGraffitiContent,
+      },
     };
 
     const signingString = canonicalStringify(messageToSign);
@@ -1006,339 +1043,156 @@ export default function App() {
       ...messageToSign,
       header: {
         ...messageToSign.header,
-        signature: signatureHex
-      }
+        signature: signatureHex,
+      },
     };
 
     await saveAndSeedMessage(fullySignedMessage);
     setCoords(activeComposerCoords);
     setGeohash(activeComposerGeohash);
+    setActiveGraffitiId(signatureHex);
     setNewGraffitiContent("");
     setReplyingTo(null);
-    const dateFormatted = new Date(targetTimestamp * 1000).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
+
+    const dateFormatted = new Date(targetTimestamp * 1000).toLocaleString([], {
+      dateStyle: "short",
+      timeStyle: "short",
+    });
     addLog(`Created and signed space-time graffiti for: ${dateFormatted}!`, "success");
 
-    Object.values(dataChannels.current).forEach(dc => {
+    Object.values(dataChannels.current).forEach((dc) => {
       if (dc.readyState === "open") {
-        dc.send(JSON.stringify({
-          type: "sync_response",
-          messages: [fullySignedMessage]
-        }));
+        dc.send(
+          JSON.stringify({
+            type: "sync_response",
+            messages: [fullySignedMessage],
+          })
+        );
       }
     });
   };
 
-  const toggleTrust = async (authorPk: string) => {
-    const isCurrentlyTrusted = trustedAuthors.includes(authorPk);
-    const updated = isCurrentlyTrusted 
-      ? trustedAuthors.filter(pk => pk !== authorPk) 
-      : [...trustedAuthors, authorPk];
-    setTrustedAuthors(updated);
-    localStorage.setItem("handshake_trust", JSON.stringify(updated));
+  const handleQuickPost = async (text: string) => {
+    if (!publicKey || !secretKey || !text.trim()) return;
+    const targetTimestamp = Math.floor(Date.now() / 1000);
+    const kp = loadKeyPair(secretKey);
 
-    try {
-      if (isCurrentlyTrusted) {
-        await deleteContact(authorPk);
-      } else {
-        await saveContact({
-          public_key: authorPk,
-          alias: authorPk.substring(0, 8),
-          added_at: Date.now()
-        });
-      }
-    } catch (err: any) {
-      console.error("Error updating contact in IndexedDB:", err);
-    }
-
-    addLog(
-      isCurrentlyTrusted 
-        ? `Removed author ${authorPk.substring(0,8)} from trust network.` 
-        : `Handshaked & Trusted author ${authorPk.substring(0,8)}!`, 
-      "success"
-    );
-  };
-
-  const handleTogglePin = async (signature: string) => {
-    if (!signature) return;
-    const isCurrentlyPinned = pinnedSignatures.has(signature);
-    const nextState = !isCurrentlyPinned;
-
-    setPinnedSignatures(prev => {
-      const next = new Set(prev);
-      if (nextState) {
-        next.add(signature);
-      } else {
-        next.delete(signature);
-      }
-      return next;
-    });
-
-    setLocalGraffitis(prev => prev.map(g => (g.header?.signature === signature ? { ...g, is_pinned: nextState ? 1 : 0 } : g)));
-    setRemoteGraffitis(prev => prev.map(g => (g.header?.signature === signature ? { ...g, is_pinned: nextState ? 1 : 0 } : g)));
-
-    try {
-      await dbTogglePin(signature, nextState);
-      addLog(nextState ? "Graffiti fijado en tu memoria local (IndexedDB)." : "Graffiti desfijado.", "info");
-    } catch (err: any) {
-      console.error("Error toggling pin in IndexedDB:", err);
-      addLog(`Error al fijar/desfijar mensaje: ${err.message}`, "danger");
-    }
-  };
-
-  const handleCardClick = (targetCoords: [number, number]) => {
-    setMapTarget(targetCoords);
-    setCoords(targetCoords);
-    addLog(`Centering map on selected graffiti: ${targetCoords[0].toFixed(5)}, ${targetCoords[1].toFixed(5)}`, "info");
-  };
-
-  const saveAndSeedMessage = async (graf: any) => {
-    // 1. Always persist to IndexedDB (Local-First Sovereign Storage - Pillar 4)
-    try {
-      await saveMessage({ ...graf, is_local: true });
-    } catch (err: any) {
-      console.error("Error saving message to IndexedDB:", err);
-    }
-
-    setLocalGraffitis(prev => {
-      if (prev.some(g => g.header.signature === graf.header.signature)) return prev;
-      return [...prev, graf];
-    });
-    setRemoteGraffitis(prev => prev.filter(g => g.header.signature !== graf.header.signature));
-
-    if (!folderHandle) {
-      addLog("Graffiti persistido en almacenamiento local soberano (IndexedDB).", "success");
-      return;
-    }
-
-    try {
-      const grafTs = getMessageTimestamp(graf);
-      const grafGh = getMessageGeohash(graf);
-      const dt = new Date(grafTs * 1000);
-      const epoch = `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}`; // YYYY-MM
-      const baseStr = `${grafGh}:${epoch}`;
-      const data = new TextEncoder().encode(baseStr);
-      const hashBuffer = await crypto.subtle.digest("SHA-1", data);
-      const infoHashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
-      
-      // Get or create info_hash subdirectory
-      const subDirHandle = await folderHandle.getDirectoryHandle(infoHashHex, { create: true });
-      const filename = `${grafTs}_${graf.header.author_pk.substring(0, 8)}.msg`;
-      
-      const fileHandle = await subDirHandle.getFileHandle(filename, { create: true });
-      const writable = await fileHandle.createWritable();
-      await writable.write(JSON.stringify(graf, null, 2));
-      await writable.close();
-      
-      // Update state
-      setLocalGraffitis(prev => {
-        if (prev.some(g => g.header.signature === graf.header.signature)) return prev;
-        return [...prev, graf];
-      });
-      setRemoteGraffitis(prev => prev.filter(g => g.header.signature !== graf.header.signature));
-      
-      addLog(`Graffiti guardado en carpeta local y seedeando: ${filename}`, "success");
-    } catch (err: any) {
-      addLog(`Error al guardar graffiti en carpeta local: ${err.message}`, "danger");
-    }
-  };
-
-  // Combine lists of graffitis to show on map
-  const allGraffitis = useMemo(() => [...localGraffitis, ...remoteGraffitis], [localGraffitis, remoteGraffitis]);
-
-  // Map markers for the 3D Globe visualization (Radio Garden / Radio Atlas)
-  const globeMarkers: GlobeMarker[] = useMemo(() => {
-    const list: GlobeMarker[] = [];
-    allGraffitis.forEach((g, idx) => {
-      try {
-        const gh = getMessageGeohash(g);
-        const gCoords = decodeGeohash(gh);
-        const isLocal = localGraffitis.some(lg => lg.header.signature === g.header.signature);
-        const isTrusted = trustedAuthors.includes(g.header.author_pk);
-        list.push({
-          id: g.header.signature || `g-${idx}`,
-          lat: gCoords.lat,
-          lon: gCoords.lon,
-          geohash: gh,
-          text: g.content?.text || "",
-          author: g.header.author_pk || "Unknown",
-          timestamp: getMessageTimestamp(g),
-          isLocal,
-          isTrusted,
-          raw: g
-        });
-      } catch (e) {
-        // Ignore invalid geohash
-      }
-    });
-    return list;
-  }, [allGraffitis, localGraffitis, trustedAuthors]);
-  
-  // Filter by time AND spatial-temporal visibility mechanics (Handshake multiplier)
-  const filteredGraffitis = allGraffitis.filter(g => {
-    // 1. Filtro temporal (a menos que se active "Ver todos los días")
-    if (!viewAllDays) {
-      const dayRange = getDayRange(dayOffset);
-      const ts = getMessageTimestamp(g);
-      if (ts < dayRange.start || ts > dayRange.end) {
-        return false;
-      }
-    }
-    
-    // 2. Filtro espacial y visibilidad (Tus propios graffitis se muestran siempre en su momento temporal)
-    const isLocallyOwned = g.header.author_pk === publicKey;
-    const isLocallyStored = localGraffitis.some(lg => lg.header.signature === g.header.signature);
-    if (isLocallyOwned || isLocallyStored) return true;
-
-    try {
-      const gCoords = decodeGeohash(getMessageGeohash(g));
-      const distance = getDistance(coords[0], coords[1], gCoords.lat, gCoords.lon);
-      const isTrusted = trustedAuthors.includes(g.header.author_pk);
-      const visibilityRadius = isTrusted ? 1000 : 200; // 1km if trusted (Handshake Multiplier), 200m if not
-      return distance <= visibilityRadius;
-    } catch (e) {
-      return false;
-    }
-  });
-
-  // Helper to build recursive thread trees from flat messages list
-  const buildThreadTrees = (graffitis: any[]) => {
-    const map: { [sig: string]: any & { replies: any[] } } = {};
-    graffitis.forEach(g => {
-      if (g.header && g.header.signature) {
-        map[g.header.signature] = { ...g, replies: [] };
-      }
-    });
-    const roots: any[] = [];
-    graffitis.forEach(g => {
-      if (!g.header || !g.header.signature) return;
-      const mapped = map[g.header.signature];
-      const parentSig = g.header.parent_signature;
-      if (parentSig && map[parentSig]) {
-        map[parentSig].replies.push(mapped);
-      } else {
-        roots.push(mapped);
-      }
-    });
-    // Sort roots by timestamp
-    roots.sort((a, b) => getMessageTimestamp(a) - getMessageTimestamp(b));
-    const sortReplies = (node: any) => {
-      node.replies.sort((a: any, b: any) => getMessageTimestamp(a) - getMessageTimestamp(b));
-      node.replies.forEach(sortReplies);
+    const messageToSign = {
+      version: "1.0",
+      header: {
+        type: "PUBLIC",
+        owner_pk: null,
+        author_pk: publicKey,
+        parent_signature: null,
+      },
+      anchor: {
+        timestamp: targetTimestamp,
+        geohash,
+        coordinates: {
+          lat: Number(coords[0].toFixed(6)),
+          lon: Number(coords[1].toFixed(6)),
+        },
+        proof: {
+          type: "GPS",
+          data: `${coords[0].toFixed(6)},${coords[1].toFixed(6)}`,
+        },
+      },
+      content: {
+        text,
+      },
     };
-    roots.forEach(sortReplies);
-    return roots;
+
+    const signingString = canonicalStringify(messageToSign);
+    const signingBytes = utf8ToBytes(signingString);
+    const sigBytes = nacl.sign.detached(signingBytes, kp.secretKey);
+    const signatureHex = toHex(sigBytes);
+
+    const fullySignedMessage = {
+      ...messageToSign,
+      header: {
+        ...messageToSign.header,
+        signature: signatureHex,
+      },
+    };
+
+    await saveAndSeedMessage(fullySignedMessage);
+    setActiveGraffitiId(signatureHex);
+
+    Object.values(dataChannels.current).forEach((dc) => {
+      if (dc.readyState === "open") {
+        dc.send(
+          JSON.stringify({
+            type: "sync_response",
+            messages: [fullySignedMessage],
+          })
+        );
+      }
+    });
   };
 
-  // Recursive component to render threaded graffiti cards
-  const ThreadedCard = ({ node, depth = 0 }: { node: any; depth: number }) => {
-    const isLocal = localGraffitis.some(g => g.header.signature === node.header.signature);
-    const isTrusted = trustedAuthors.includes(node.header.author_pk);
-    const isPinned = pinnedSignatures.has(node.header?.signature) || node.is_pinned === 1;
-    const nodeGh = getMessageGeohash(node);
-    const gCoords = decodeGeohash(nodeGh);
-    const dist = getDistance(coords[0], coords[1], gCoords.lat, gCoords.lon);
-    const avatar = getAuthorAvatar(node.header.author_pk);
-    const nodeTs = getMessageTimestamp(node);
+  // 8. Bidirectional Synchronization Handlers
+  const allGraffitis = useMemo(
+    () => [...localGraffitis, ...remoteGraffitis],
+    [localGraffitis, remoteGraffitis]
+  );
 
-    return (
-      <div style={{ 
-        marginLeft: depth > 0 ? "16px" : "0", 
-        borderLeft: depth > 0 ? "2px solid rgba(0, 243, 255, 0.25)" : "none", 
-        paddingLeft: depth > 0 ? "12px" : "0",
-        marginTop: "8px"
-      }}>
-        <div 
-          className={`timeline-card ${isTrusted ? "trusted" : isLocal ? "local" : "remote"}`}
-          onClick={() => handleCardClick([gCoords.lat, gCoords.lon])}
-          style={{ marginBottom: "4px" }}
-        >
-          <div className="card-header-top">
-            <div className="card-author-identity">
-              <div className="avatar-identicon" style={{ background: avatar.bg }}>
-                {avatar.initials}
-              </div>
-              <div className="avatar-hash-chip">
-                <span className="card-author-hash">#{avatar.snippet}</span>
-                <span className={`badge ${isTrusted ? "badge-success" : isLocal ? "badge-info" : "badge-warning"}`} style={{ fontSize: "9px", padding: "1px 5px" }}>
-                  {isTrusted ? "★ Confiable" : isLocal ? "● Local" : "⚡ P2P"}
-                </span>
-                {isPinned && (
-                  <span className="badge badge-success" style={{ fontSize: "9px", padding: "1px 5px", background: "rgba(16, 185, 129, 0.2)", border: "1px solid #10b981" }}>
-                    📌 Fijado
-                  </span>
-                )}
-              </div>
-            </div>
+  const filteredMessages = useMemo(() => {
+    return queryMessages(allGraffitis, {
+      selectedGeohash,
+      temporalFilter,
+      searchQuery,
+      categoryFilter,
+      userPublicKey: publicKey,
+      trustedAuthors,
+      pinnedSignatures,
+      userCoords: coords,
+    });
+  }, [
+    allGraffitis,
+    selectedGeohash,
+    temporalFilter,
+    searchQuery,
+    categoryFilter,
+    publicKey,
+    trustedAuthors,
+    pinnedSignatures,
+    coords,
+  ]);
 
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <span className={`card-distance-chip ${isTrusted ? "trusted" : isLocal ? "local" : "remote"}`}>
-                <MapPin size={11} />
-                {dist < 1000 ? `${dist.toFixed(0)}m` : `${(dist / 1000).toFixed(1)}km`}
-              </span>
-              <span className="card-time" style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                {new Date(nodeTs * 1000).toLocaleTimeString([], {hour: "2-digit", minute:"2-digit"})}
-              </span>
-            </div>
-          </div>
+  const handleSelectMessage = (msg: any) => {
+    const sig = msg.header?.signature || msg.signature;
+    setActiveGraffitiId(sig);
+    try {
+      const gh = getMessageGeohash(msg);
+      const decoded = decodeGeohash(gh);
+      setCoords([decoded.lat, decoded.lon]);
+    } catch {
+      // ignore
+    }
+  };
 
-          <div className="card-content" style={{ fontSize: "13px", lineHeight: "1.45", color: "var(--text-primary)" }}>
-            "{node.content.text}"
-          </div>
-
-          <div className="card-footer" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px" }}>
-            <span className="card-geohash" style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-              Geohash: <code style={{ color: "var(--neon-cyan)" }}>{nodeGh.substring(0, 7)}</code>
-            </span>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <button
-                className={`btn ${isPinned ? "btn-primary" : "btn-secondary"}`}
-                style={{ padding: "2px 8px", fontSize: "10px", height: "22px", display: "inline-flex", alignItems: "center", gap: "3px" }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleTogglePin(node.header.signature);
-                }}
-                title={isPinned ? "Desfijar de tu memoria local" : "Fijar en tu memoria local"}
-              >
-                {isPinned ? "📌 Fijado" : "📌 Fijar"}
-              </button>
-              {node.header.author_pk !== publicKey && (
-                <button
-                  className="btn btn-secondary"
-                  style={{ padding: "2px 8px", fontSize: "10px", height: "22px", display: "inline-flex", alignItems: "center", gap: "3px" }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setReplyingTo(node);
-                    setComposerLocationMode("parent");
-                    setIsComposerOpen(true);
-                  }}
-                >
-                  💬 Responder
-                </button>
-              )}
-              {!isLocal && (
-                <button
-                  className="btn btn-primary"
-                  style={{ padding: "2px 8px", fontSize: "10px", height: "22px", display: "inline-flex" }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    saveAndSeedMessage(node);
-                  }}
-                >
-                  📥 Seedear
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-        {node.replies.map((reply: any, idx: number) => (
-          <ThreadedCard key={`reply-${node.header.signature}-${idx}`} node={reply} depth={depth + 1} />
-        ))}
-      </div>
+  const handleFocusRadar = (targetCoords: [number, number], targetGh: string, sig?: string) => {
+    setCoords(targetCoords);
+    setSelectedGeohash(targetGh ? targetGh.substring(0, 5) : null);
+    if (sig) {
+      setActiveGraffitiId(sig);
+    }
+    addLog(
+      `Centering radar on coordinates: ${targetCoords[0].toFixed(5)}, ${targetCoords[1].toFixed(5)} (${targetGh})`,
+      "info"
     );
+  };
+
+  const handleSelectGeohashFromRadar = (gh: string | null, targetCoords?: [number, number]) => {
+    setSelectedGeohash(gh);
+    if (targetCoords) {
+      setCoords(targetCoords);
+    }
   };
 
   return (
     <div id="root">
+      {/* App Header */}
       <header className="app-header">
         <div className="logo-container">
           <div className="logo-badge">
@@ -1352,7 +1206,10 @@ export default function App() {
 
         {/* Center P2P Live HUD */}
         <div className="header-p2p-hud">
-          <div className={`hud-pill ${connectedPeers.length > 0 ? "active" : ""}`} title="Nodos P2P WebRTC conectados">
+          <div
+            className={`hud-pill ${connectedPeers.length > 0 ? "active" : ""}`}
+            title="Nodos P2P WebRTC conectados"
+          >
             <div className={`p2p-pulse-dot ${connectedPeers.length > 0 ? "emerald" : "amber"}`} />
             <span>Peers: <code>{connectedPeers.length}</code></span>
           </div>
@@ -1363,33 +1220,28 @@ export default function App() {
           </div>
 
           <div className="hud-pill" title="Estado de sincronización Handshake-Sync">
-            <Activity size={12} style={{ color: wsStatus === "connected" ? "var(--neon-emerald)" : "var(--neon-amber)" }} />
-            <span>Handshake-Sync: <code style={{ color: wsStatus === "connected" ? "var(--neon-emerald)" : "var(--neon-amber)" }}>{wsStatus === "connected" ? "Live" : "Standby"}</code></span>
-          </div>
-
-          {/* View Mode Switcher */}
-          <div className="view-mode-toggle">
-            <button
-              className={`view-mode-btn ${viewMode === "globe" ? "active" : ""}`}
-              onClick={() => setViewMode("globe")}
-              title="Vista Global 3D (Radio Garden / Radio Atlas)"
-            >
-              <Globe size={13} />
-              <span>Globo 3D</span>
-            </button>
-            <button
-              className={`view-mode-btn ${viewMode === "map" ? "active" : ""}`}
-              onClick={() => setViewMode("map")}
-              title="Vista de Mapa 2D Local"
-            >
-              <Layers size={13} />
-              <span>Mapa 2D</span>
-            </button>
+            <Activity
+              size={12}
+              style={{
+                color: wsStatus === "connected" ? "var(--neon-emerald)" : "var(--neon-amber)",
+              }}
+            />
+            <span>
+              Handshake-Sync:{" "}
+              <code
+                style={{
+                  color: wsStatus === "connected" ? "var(--neon-emerald)" : "var(--neon-amber)",
+                }}
+              >
+                {wsStatus === "connected" ? "Live" : "Standby"}
+              </code>
+            </span>
           </div>
         </div>
 
+        {/* Header Actions */}
         <div className="header-status">
-          <button 
+          <button
             className="btn btn-primary btn-header-write"
             onClick={() => {
               setReplyingTo(null);
@@ -1401,9 +1253,9 @@ export default function App() {
             <Plus size={16} />
             <span>Pintar Graffiti</span>
           </button>
-          
-          <button 
-            className={`btn btn-secondary ${isSettingsOpen ? 'btn-active-toggle' : ''}`}
+
+          <button
+            className={`btn btn-secondary ${isSettingsOpen ? "btn-active-toggle" : ""}`}
             onClick={() => setIsSettingsOpen(true)}
             title="Configuración de Nodo, Identidad y Logs"
           >
@@ -1411,7 +1263,7 @@ export default function App() {
             <span>Nodo & Ajustes</span>
           </button>
 
-          <button 
+          <button
             className="btn btn-secondary"
             onClick={() => setIsHelpOpen(true)}
             title="Información sobre el protocolo"
@@ -1419,355 +1271,133 @@ export default function App() {
             ❔ Ayuda
           </button>
 
-          <button 
+          <button
             className="btn btn-secondary"
             onClick={connectTracker}
             disabled={wsStatus === "connecting"}
             title="Reconectar con el Tracker"
-            style={{ height: "34px", padding: "6px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+            style={{
+              height: "34px",
+              padding: "6px 12px",
+              fontSize: "12px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
           >
-            <span className={`status-dot ${wsStatus === "connected" ? "active" : "inactive"}`}></span>
+            <span className={`status-dot ${wsStatus === "connected" ? "active" : "inactive"}`} />
             Tracker: {wsStatus === "connected" ? "Online" : wsStatus === "connecting" ? "..." : "Offline"}
           </button>
         </div>
       </header>
 
-      <div className="app-layout">
-        {/* Column 1: Timeline / Wall Feed */}
-        <div className="timeline">
-          <div className="timeline-header">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3 className="timeline-title">
-                <Clock size={18} /> Graffitis en la zona
-              </h3>
-              <span className="badge badge-info" style={{ fontSize: "10px" }}>
-                {filteredGraffitis.length} mensajes
-              </span>
-            </div>
-            <p className="timeline-desc">
-              Huellas descubiertas en tu rango de visibilidad. Haz clic en el mapa para explorar otras coordenadas.
-            </p>
-          </div>
+      {/* Mobile Tab Navigation Bar */}
+      <nav className="mobile-triad-nav" aria-label="Navegación Triada Espacio-Tiempo Móvil">
+        <button
+          className={`mobile-nav-btn ${mobileTab === "radar" ? "active" : ""}`}
+          onClick={() => setMobileTab("radar")}
+        >
+          <Globe size={14} />
+          <span>Radar (25%)</span>
+        </button>
+        <button
+          className={`mobile-nav-btn hero-btn ${mobileTab === "messages" ? "active" : ""}`}
+          onClick={() => setMobileTab("messages")}
+        >
+          <MessageSquare size={14} />
+          <span>Mensajes (50%)</span>
+        </button>
+        <button
+          className={`mobile-nav-btn ${mobileTab === "timeline" ? "active" : ""}`}
+          onClick={() => setMobileTab("timeline")}
+        >
+          <Clock size={14} />
+          <span>Tiempo (25%)</span>
+        </button>
+      </nav>
 
-          <div className="timeline-list">
-            {filteredGraffitis.length === 0 ? (
-              <div className="timeline-empty">
-                <MapPin size={32} style={{ color: "var(--text-muted)", marginBottom: "8px" }} />
-                <p style={{ fontWeight: 600 }}>Zona sin graffitis en este día</p>
-                <span style={{ fontSize: "12px", color: "var(--text-muted)", textAlign: "center", lineHeight: "1.5" }}>
-                  Usa el botón <strong>"Pintar Graffiti"</strong> para dejar la primera huella en estas coordenadas y momento temporal.
-                </span>
-              </div>
-            ) : (
-              buildThreadTrees(filteredGraffitis).map((node, idx) => (
-                <ThreadedCard key={`root-${idx}`} node={node} depth={0} />
-              ))
-            )}
-          </div>
+      {/* Unified Space-Time Cockpit: 25% Space Radar | 50% Message Stream (Hero) | 25% Temporal Horizon */}
+      <main className="app-cockpit-layout">
+        {/* Panel 1: Spatial Radar & Context (25% Where) */}
+        <div className={`cockpit-panel-space ${mobileTab === "radar" ? "mobile-tab-active" : ""}`}>
+          <SpatialRadar
+            userCoords={gpsCoords || coords}
+            activeCoords={coords}
+            activeGeohash={geohash}
+            selectedGeohash={selectedGeohash}
+            activeGraffitiId={activeGraffitiId}
+            messages={filteredMessages}
+            allMessages={allGraffitis}
+            trustedAuthors={trustedAuthors}
+            publicKey={publicKey}
+            onSelectCoords={(newCoords, newGh) => {
+              setCoords(newCoords);
+              if (newGh) setGeohash(newGh);
+            }}
+            onSelectGeohash={handleSelectGeohashFromRadar}
+            onSelectMessageId={(id) => setActiveGraffitiId(id)}
+            onOpenComposer={(compCoords) => {
+              if (compCoords) setCoords(compCoords);
+              setReplyingTo(null);
+              setIsComposerOpen(true);
+            }}
+          />
         </div>
 
-        {/* Column 2: Interactive Map & 3D Globe Viewport */}
-        <div className="map-container" style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}>
-          {viewMode === "globe" ? (
-            <GlobeView
-              markers={globeMarkers}
-              userCoords={coords}
-              activeCoords={coords}
-              onSelectLocation={(lat, lon) => {
-                setCoords([lat, lon]);
-                setMapTarget([lat, lon]);
-                setViewMode("map");
-              }}
-              onSwitchTo2D={() => {
-                setMapTarget(coords);
-                setViewMode("map");
-              }}
-            />
-          ) : (
-            <>
-              <button
-                className="btn btn-secondary"
-                style={{
-                  position: "absolute",
-                  top: "20px",
-                  left: "20px",
-                  zIndex: 999,
-                  background: "rgba(13, 17, 27, 0.88)",
-                  backdropFilter: "blur(16px)",
-                  border: "1px solid var(--border-glow)",
-                  boxShadow: "0 4px 20px rgba(0,0,0,0.5), 0 0 15px var(--neon-cyan-glow)",
-                  color: "#ffffff",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px"
-                }}
-                onClick={() => setViewMode("globe")}
-                title="Volver a la vista 3D del Globo terráqueo"
-              >
-                <Globe size={14} style={{ color: "var(--neon-cyan)" }} />
-                <span>🌐 Vista Globo 3D</span>
-              </button>
-
-              {/* Floating Map Style Selector */}
-          <div className="map-style-selector">
-            <button 
-              className="map-style-btn" 
-              onClick={() => setShowStyleMenu(!showStyleMenu)}
-              title="Cambiar estilo visual del mapa"
-            >
-              <Layers size={18} />
-              <span>{MAP_STYLES[mapStyle].label}</span>
-            </button>
-            
-            {showStyleMenu && (
-              <div className="map-style-dropdown">
-                <button 
-                  className={`map-style-option ${mapStyle === 'clean_light' ? 'active' : ''}`}
-                  onClick={() => { setMapStyle('clean_light'); setShowStyleMenu(false); }}
-                >
-                  <Sun size={14} />
-                  <span>Minimalista Claro (Limpio)</span>
-                </button>
-                <button 
-                  className={`map-style-option ${mapStyle === 'comic' ? 'active' : ''}`}
-                  onClick={() => { setMapStyle('comic'); setShowStyleMenu(false); }}
-                >
-                  <Globe size={14} />
-                  <span>Estilo Cómic / Ilustración</span>
-                </button>
-                <button 
-                  className={`map-style-option ${mapStyle === 'streets_hd' ? 'active' : ''}`}
-                  onClick={() => { setMapStyle('streets_hd'); setShowStyleMenu(false); }}
-                >
-                  <Globe size={14} />
-                  <span>Calles HD (Esri)</span>
-                </button>
-                <button 
-                  className={`map-style-option ${mapStyle === 'satellite' ? 'active' : ''}`}
-                  onClick={() => { setMapStyle('satellite'); setShowStyleMenu(false); }}
-                >
-                  <Satellite size={14} />
-                  <span>Satélite HD (Esri)</span>
-                </button>
-                <button 
-                  className={`map-style-option ${mapStyle === 'dark_gray' ? 'active' : ''}`}
-                  onClick={() => { setMapStyle('dark_gray'); setShowStyleMenu(false); }}
-                >
-                  <Moon size={14} />
-                  <span>Dark Canvas (Esri)</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          <MapContainer 
-            center={coords} 
-            zoom={14} 
-            className={`leaflet-map map-style-${mapStyle}`}
-            zoomControl={false}
-          >
-            <TileLayer
-              key={mapStyle}
-              attribution={MAP_STYLES[mapStyle].attribution}
-              url={MAP_STYLES[mapStyle].url}
-              maxZoom={MAP_STYLES[mapStyle].maxZoom}
-            />
-
-            <MapController center={coords} target={mapTarget} />
-            <MapEventsTracker 
-              onClick={(lat, lon) => {
-                setCoords([lat, lon]);
-              }} 
-              onClearTarget={() => setMapTarget(null)}
-              onZoomOutToGlobe={() => setViewMode("globe")}
-            />
-
-            {/* Visibility Rings */}
-            <Circle 
-              center={coords} 
-              radius={200} 
-              pathOptions={{ color: 'var(--accent)', fillColor: 'var(--accent)', fillOpacity: 0.08, dashArray: '4, 4' }} 
-            />
-            <Circle 
-              center={coords} 
-              radius={1000} 
-              pathOptions={{ color: 'var(--accent-hover)', fillColor: 'var(--accent-hover)', fillOpacity: 0.03, dashArray: '8, 8' }} 
-            />
-
-            {/* User Node Marker */}
-            <Marker 
-              position={coords}
-              icon={L.divIcon({
-                className: "custom-marker",
-                html: `
-                  <div class="user-beacon">
-                    <div class="user-beacon-ping"></div>
-                    <div class="user-beacon-core"></div>
-                  </div>
-                `,
-                iconSize: [28, 28],
-                iconAnchor: [14, 14]
-              })}
-            >
-              <Popup className="handshake-popup">
-                <div className="popup-card">
-                  <div className="popup-badge you">Tu Posición (Seeder)</div>
-                  <div className="popup-meta">
-                    <div><strong>Geohash:</strong> <code>{geohash}</code></div>
-                    <div><strong>ID:</strong> <code>{publicKey.substring(0, 10)}...</code></div>
-                  </div>
-                  <button 
-                    className="btn btn-primary popup-btn" 
-                    style={{ marginTop: "6px" }}
-                    onClick={() => {
-                      setReplyingTo(null);
-                      setIsComposerOpen(true);
-                    }}
-                  >
-                    ✍️ Pintar aquí
-                  </button>
-                </div>
-              </Popup>
-            </Marker>
-
-            {/* Graffiti Markers */}
-            {filteredGraffitis.map((graf, idx) => {
-              try {
-                const isLocal = localGraffitis.some(g => g.header.signature === graf.header.signature);
-                const grafGh = getMessageGeohash(graf);
-                const grafCoords = decodeGeohash(grafGh);
-                const grafTs = getMessageTimestamp(graf);
-                const isTrusted = trustedAuthors.includes(graf.header.author_pk);
-                const typeClass = isTrusted ? 'trusted' : isLocal ? 'local' : 'remote';
-                
-                return (
-                  <Marker 
-                    key={`graf-${idx}`} 
-                    position={[grafCoords.lat, grafCoords.lon]}
-                    icon={L.divIcon({
-                      className: "custom-marker",
-                      html: `
-                        <div class="graffiti-pin ${typeClass}">
-                          <div class="graffiti-pin-glow"></div>
-                          <div class="graffiti-pin-dot"></div>
-                        </div>
-                      `,
-                      iconSize: [26, 26],
-                      iconAnchor: [13, 13]
-                    })}
-                  >
-                    <Popup className="handshake-popup">
-                      <div className="popup-card">
-                        <div className="popup-header">
-                          <span className={`badge ${isTrusted ? "badge-success" : isLocal ? "badge-success" : "badge-warning"}`}>
-                            {isTrusted ? "★ Contacto Confiable" : isLocal ? "● Seeding Local" : "⚡ P2P Sincronizado"}
-                          </span>
-                        </div>
-                        <p className="popup-text">"{graf.content.text}"</p>
-                        <div className="popup-details">
-                          <span><strong>Autor:</strong> <code>{graf.header.author_pk.substring(0, 8)}...</code></span>
-                          <span><strong>Fecha:</strong> {new Date(grafTs * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({new Date(grafTs * 1000).toLocaleDateString()})</span>
-                          <span><strong>Geohash:</strong> <code>{grafGh}</code></span>
-                        </div>
-                        <div className="popup-actions">
-                          <button 
-                            className={`btn ${pinnedSignatures.has(graf.header?.signature) ? "btn-primary" : "btn-secondary"} popup-btn`}
-                            onClick={() => handleTogglePin(graf.header?.signature)}
-                            title={pinnedSignatures.has(graf.header?.signature) ? "Desfijar de tu memoria local" : "Fijar en tu memoria local"}
-                          >
-                            {pinnedSignatures.has(graf.header?.signature) ? "📌 Fijado" : "📌 Fijar"}
-                          </button>
-                          {graf.header.author_pk !== publicKey && (
-                            <>
-                              <button 
-                                className="btn btn-secondary popup-btn" 
-                                onClick={() => toggleTrust(graf.header.author_pk)}
-                              >
-                                🤝 {isTrusted ? "Desconfiar" : "Handshake"}
-                              </button>
-                              <button 
-                                className="btn btn-secondary popup-btn" 
-                                onClick={() => {
-                                  setReplyingTo(graf);
-                                  setIsComposerOpen(true);
-                                }}
-                              >
-                                💬 Responder
-                              </button>
-                            </>
-                          )}
-                          {!isLocal && (
-                            <button 
-                              className="btn btn-primary popup-btn" 
-                              onClick={() => saveAndSeedMessage(graf)}
-                            >
-                              📥 Guardar
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </Popup>
-                  </Marker>
-                );
-              } catch (e) {
-                return null;
-              }
-            })}
-          </MapContainer>
-            </>
-          )}
-
-          {/* Time Slider Overlay */}
-          <div className="map-overlay">
-            <div className="overlay-panel time-slider-container">
-              <div className="slider-header">
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <Clock size={14} style={{ color: "var(--accent)" }} />
-                  <span>Explorador Temporal:</span>
-                  <span style={{ fontWeight: 700, color: "var(--accent)" }}>{getSelectedDayText(dayOffset)}</span>
-                </div>
-                <div style={{ display: "flex", gap: "6px" }}>
-                  <button 
-                    className={`btn btn-secondary ${viewAllDays ? 'btn-active-toggle' : ''}`}
-                    style={{ padding: "2px 8px", fontSize: "10px", height: "24px" }}
-                    onClick={() => setViewAllDays(!viewAllDays)}
-                    title="Alternar entre ver solo el día activo o ver todos los graffitis sin importar el tiempo"
-                  >
-                    {viewAllDays ? "👁️ Mostrando Todo" : "🗓️ Filtrar por Día"}
-                  </button>
-                </div>
-              </div>
-              <input 
-                type="range" 
-                min="-14"
-                max="14"
-                step="1"
-                value={dayOffset}
-                onChange={(e) => {
-                  setDayOffset(Number(e.target.value));
-                  if (viewAllDays) setViewAllDays(false);
-                }}
-                className="slider-input"
-              />
-              <div className="slider-ticks">
-                <button className={`tick-btn ${dayOffset === -7 ? 'active' : ''}`} onClick={() => { setDayOffset(-7); setViewAllDays(false); }}>-7d</button>
-                <button className={`tick-btn ${dayOffset === -1 ? 'active' : ''}`} onClick={() => { setDayOffset(-1); setViewAllDays(false); }}>Ayer</button>
-                <button className={`tick-btn ${dayOffset === 0 ? 'active' : ''}`} onClick={() => { setDayOffset(0); setViewAllDays(false); }}>Hoy</button>
-                <button className={`tick-btn ${dayOffset === 1 ? 'active' : ''}`} onClick={() => { setDayOffset(1); setViewAllDays(false); }}>Mañana</button>
-                <button className={`tick-btn ${dayOffset === 7 ? 'active' : ''}`} onClick={() => { setDayOffset(7); setViewAllDays(false); }}>+7d</button>
-                <button className={`tick-btn ${dayOffset === 14 ? 'active' : ''}`} onClick={() => { setDayOffset(14); setViewAllDays(false); }}>+14d (Futuro)</button>
-              </div>
-            </div>
-          </div>
+        {/* Panel 2: Sovereign Message Stream & Threads (50% The Hero) */}
+        <div className={`cockpit-panel-hero ${mobileTab === "messages" ? "mobile-tab-active" : ""}`}>
+          <MessageStream
+            messages={filteredMessages}
+            allMessages={allGraffitis}
+            userCoords={coords}
+            publicKey={publicKey}
+            trustedAuthors={trustedAuthors}
+            pinnedSignatures={pinnedSignatures}
+            activeGraffitiId={activeGraffitiId}
+            selectedGeohash={selectedGeohash}
+            temporalFilter={temporalFilter}
+            searchQuery={searchQuery}
+            categoryFilter={categoryFilter}
+            onSelectMessage={handleSelectMessage}
+            onFocusRadar={handleFocusRadar}
+            onClearGeohashFilter={() => setSelectedGeohash(null)}
+            onClearTemporalFilter={() => setTemporalFilter({ dimension: "all" })}
+            onClearSearch={() => setSearchQuery("")}
+            onSetSearchQuery={setSearchQuery}
+            onSetCategoryFilter={setCategoryFilter}
+            onTogglePin={handleTogglePin}
+            onToggleTrust={toggleTrust}
+            onReply={(parent) => {
+              setReplyingTo(parent);
+              setComposerLocationMode("parent");
+              setIsComposerOpen(true);
+            }}
+            onSaveAndSeed={saveAndSeedMessage}
+            onOpenComposer={() => {
+              setReplyingTo(null);
+              setComposerLocationMode("picked");
+              setIsComposerOpen(true);
+            }}
+            onQuickPost={handleQuickPost}
+          />
         </div>
-      </div>
 
-      {/* Floating Composer Modal (Punto 2) */}
+        {/* Panel 3: Temporal Horizon & Interactive Timeline (25% When) */}
+        <div className={`cockpit-panel-time ${mobileTab === "timeline" ? "mobile-tab-active" : ""}`}>
+          <TemporalHorizon
+            messages={filteredMessages}
+            allMessages={allGraffitis}
+            temporalFilter={temporalFilter}
+            onSetTemporalFilter={setTemporalFilter}
+            onResetTemporalFilter={() => setTemporalFilter({ dimension: "all" })}
+          />
+        </div>
+      </main>
+
+      {/* Floating Composer Modal */}
       {isComposerOpen && (
         <div className="modal-overlay" onClick={() => setIsComposerOpen(false)}>
-          <div className="modal-content composer-modal" onClick={e => e.stopPropagation()}>
+          <div className="modal-content composer-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <MessageSquarePlus size={20} style={{ color: "var(--accent)" }} />
@@ -1781,15 +1411,22 @@ export default function App() {
             {replyingTo && (
               <div className="composer-reply-banner">
                 <div>
-                  <span style={{ fontSize: "11px", color: "var(--accent)", fontWeight: 600 }}>RESPONDIENDO A:</span>
-                  <div style={{ fontSize: "12px", color: "var(--text-primary)", fontStyle: "italic", marginTop: "2px" }}>
-                    "{replyingTo.content.text.substring(0, 80)}{replyingTo.content.text.length > 80 ? '...' : ''}"
+                  <span style={{ fontSize: "11px", color: "var(--accent)", fontWeight: 600 }}>
+                    RESPONDIENDO A:
+                  </span>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: "var(--text-primary)",
+                      fontStyle: "italic",
+                      marginTop: "2px",
+                    }}
+                  >
+                    "{replyingTo.content?.text?.substring(0, 80)}
+                    {replyingTo.content?.text?.length > 80 ? "..." : ""}"
                   </div>
                 </div>
-                <button 
-                  className="reply-cancel-btn"
-                  onClick={() => setReplyingTo(null)}
-                >
+                <button className="reply-cancel-btn" onClick={() => setReplyingTo(null)}>
                   <X size={14} /> Cancelar hilo
                 </button>
               </div>
@@ -1797,9 +1434,15 @@ export default function App() {
 
             {/* Space-Time Indicators */}
             <div className="composer-meta-bar">
-              <div className="composer-meta-item" title="Coordenadas espaciales donde se colocará el graffiti">
+              <div
+                className="composer-meta-item"
+                title="Coordenadas espaciales donde se colocará el graffiti"
+              >
                 <MapPin size={13} style={{ color: "var(--neon-cyan)" }} />
-                <span>Geohash: <code>{activeComposerGeohash.substring(0, 7)}</code> ({activeComposerCoords[0].toFixed(4)}, {activeComposerCoords[1].toFixed(4)})</span>
+                <span>
+                  Geohash: <code>{activeComposerGeohash.substring(0, 7)}</code> (
+                  {activeComposerCoords[0].toFixed(4)}, {activeComposerCoords[1].toFixed(4)})
+                </span>
               </div>
               <div className="composer-meta-item" title="Momento temporal de anclaje">
                 <Clock size={13} style={{ color: "var(--neon-amber)" }} />
@@ -1807,13 +1450,13 @@ export default function App() {
               </div>
             </div>
 
-            {/* Sovereign Location Selector (Declarative Location Principle) */}
+            {/* Sovereign Location Selector */}
             <div className="composer-location-section">
               <div className="composer-location-title">
                 <MapPin size={13} style={{ color: "var(--neon-cyan)" }} />
                 <span>Ubicación Soberana de Publicación</span>
               </div>
-              
+
               <div className="composer-location-options">
                 {replyingTo && (
                   <button
@@ -1844,7 +1487,7 @@ export default function App() {
                     setComposerLocationMode("gps");
                     if (!gpsCoords && navigator.geolocation) {
                       navigator.geolocation.getCurrentPosition(
-                        pos => {
+                        (pos) => {
                           const newGps: [number, number] = [pos.coords.latitude, pos.coords.longitude];
                           setGpsCoords(newGps);
                         },
@@ -1857,48 +1500,78 @@ export default function App() {
                   title="Anclar en la posición GPS de tu dispositivo"
                 >
                   <Navigation size={13} />
-                  <span>GPS actual ({gpsCoords ? `${gpsCoords[0].toFixed(2)}, ${gpsCoords[1].toFixed(2)}` : "Detectar"})</span>
+                  <span>
+                    GPS actual (
+                    {gpsCoords
+                      ? `${gpsCoords[0].toFixed(2)}, ${gpsCoords[1].toFixed(2)}`
+                      : "Detectar"}
+                    )
+                  </span>
                 </button>
               </div>
 
               <div className="composer-resolved-coords">
-                <span>Geohash anclaje: <code>{activeComposerGeohash.substring(0, 7)}</code></span>
-                <span>Lat/Lon: <code>{activeComposerCoords[0].toFixed(5)}, {activeComposerCoords[1].toFixed(5)}</code></span>
+                <span>
+                  Geohash anclaje: <code>{activeComposerGeohash.substring(0, 7)}</code>
+                </span>
+                <span>
+                  Lat/Lon:{" "}
+                  <code>
+                    {activeComposerCoords[0].toFixed(5)}, {activeComposerCoords[1].toFixed(5)}
+                  </code>
+                </span>
               </div>
             </div>
 
             {/* Time Mode Switcher */}
             <div className="composer-time-options">
-              <button 
+              <button
                 type="button"
-                className={`time-pill-btn ${writeTimeMode === 'slider' ? 'active' : ''}`}
-                onClick={() => setWriteTimeMode('slider')}
-                title="Anclar en el día seleccionado en la línea de tiempo del mapa"
+                className={`time-pill-btn ${writeTimeMode === "slider" ? "active" : ""}`}
+                onClick={() => setWriteTimeMode("slider")}
+                title="Anclar en el día seleccionado en la línea de tiempo"
               >
-                ⏳ Línea de Tiempo ({getSelectedDayText(dayOffset)})
+                ⏳ Línea de Tiempo
               </button>
-              <button 
+              <button
                 type="button"
-                className={`time-pill-btn ${writeTimeMode === 'now' ? 'active' : ''}`}
-                onClick={() => setWriteTimeMode('now')}
+                className={`time-pill-btn ${writeTimeMode === "now" ? "active" : ""}`}
+                onClick={() => setWriteTimeMode("now")}
                 title="Anclar en el momento exacto actual"
               >
                 ⚡ Ahora
               </button>
-              <button 
+              <button
                 type="button"
-                className={`time-pill-btn ${writeTimeMode === 'custom' ? 'active' : ''}`}
-                onClick={() => setWriteTimeMode('custom')}
+                className={`time-pill-btn ${writeTimeMode === "custom" ? "active" : ""}`}
+                onClick={() => setWriteTimeMode("custom")}
                 title="Elegir una fecha u hora específica en el futuro o pasado"
               >
                 📅 Fecha exacta
               </button>
             </div>
 
-            {writeTimeMode === 'custom' && (
+            {writeTimeMode === "slider" && (
+              <div style={{ marginTop: "10px", padding: "8px 12px", background: "rgba(0,0,0,0.25)", borderRadius: "8px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", marginBottom: "4px" }}>
+                  <span style={{ color: "var(--text-muted)" }}>Desplazamiento temporal:</span>
+                  <span style={{ color: "var(--neon-amber)", fontWeight: 600 }}>{getTargetTimeLabel()}</span>
+                </div>
+                <input
+                  type="range"
+                  min="-30"
+                  max="30"
+                  value={composerDayOffset}
+                  onChange={(e) => setComposerDayOffset(Number(e.target.value))}
+                  style={{ width: "100%", accentColor: "var(--neon-amber)", cursor: "pointer" }}
+                />
+              </div>
+            )}
+
+            {writeTimeMode === "custom" && (
               <div className="custom-datetime-container">
-                <input 
-                  type="datetime-local" 
+                <input
+                  type="datetime-local"
                   className="form-input custom-date-input"
                   value={customWriteDate}
                   onChange={(e) => setCustomWriteDate(e.target.value)}
@@ -1907,10 +1580,14 @@ export default function App() {
             )}
 
             <div className="composer-textarea-wrapper">
-              <textarea 
+              <textarea
                 className="form-input composer-textarea"
                 rows={4}
-                placeholder={replyingTo ? "Escribe tu respuesta al hilo..." : "Escribe el graffiti o huella que quedará anclado en este lugar y momento..."}
+                placeholder={
+                  replyingTo
+                    ? "Escribe tu respuesta al hilo..."
+                    : "Escribe el graffiti o huella que quedará anclado en este lugar y momento..."
+                }
                 value={newGraffitiContent}
                 onChange={(e) => setNewGraffitiContent(e.target.value)}
                 autoFocus
@@ -1929,8 +1606,8 @@ export default function App() {
               <button className="btn btn-secondary" onClick={() => setIsComposerOpen(false)}>
                 Cancelar
               </button>
-              <button 
-                className="btn btn-primary btn-submit-graffiti" 
+              <button
+                className="btn btn-primary btn-submit-graffiti"
                 onClick={async () => {
                   await handleCreateGraffiti();
                   setIsComposerOpen(false);
@@ -1945,10 +1622,10 @@ export default function App() {
         </div>
       )}
 
-      {/* Floating Node & Settings Modal (Punto 3 - Oculta la parte técnica) */}
+      {/* Floating Node & Settings Modal */}
       {isSettingsOpen && (
         <div className="modal-overlay" onClick={() => setIsSettingsOpen(false)}>
-          <div className="modal-content settings-modal" onClick={e => e.stopPropagation()}>
+          <div className="modal-content settings-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <Settings size={20} style={{ color: "var(--accent)" }} />
@@ -1961,51 +1638,67 @@ export default function App() {
 
             {/* Settings Tabs */}
             <div className="settings-nav-tabs">
-              <button 
-                className={`tab-btn ${settingsTab === 'identity' ? 'active' : ''}`}
-                onClick={() => setSettingsTab('identity')}
+              <button
+                className={`tab-btn ${settingsTab === "identity" ? "active" : ""}`}
+                onClick={() => setSettingsTab("identity")}
               >
                 <Shield size={14} /> Identidad Criptográfica
               </button>
-              <button 
-                className={`tab-btn ${settingsTab === 'storage' ? 'active' : ''}`}
-                onClick={() => setSettingsTab('storage')}
+              <button
+                className={`tab-btn ${settingsTab === "storage" ? "active" : ""}`}
+                onClick={() => setSettingsTab("storage")}
               >
                 <HardDrive size={14} /> Custodia & Archivos
               </button>
-              <button 
-                className={`tab-btn ${settingsTab === 'network' ? 'active' : ''}`}
-                onClick={() => setSettingsTab('network')}
+              <button
+                className={`tab-btn ${settingsTab === "network" ? "active" : ""}`}
+                onClick={() => setSettingsTab("network")}
               >
                 <Terminal size={14} /> Enjambre P2P & Logs ({connectedPeers.length})
               </button>
             </div>
 
             <div className="settings-tab-body">
-              {settingsTab === 'identity' && (
+              {settingsTab === "identity" && (
                 <div className="tab-pane">
                   <div className="info-card">
-                    <span style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 600 }}>CLAVE PÚBLICA (IDENTIFICADOR)</span>
+                    <span style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 600 }}>
+                      CLAVE PÚBLICA (IDENTIFICADOR)
+                    </span>
                     <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                      <div className="pubkey-display" style={{ flex: 1 }}>{publicKey || "Generando..."}</div>
-                      <button 
-                        className="btn btn-secondary" 
+                      <div className="pubkey-display" style={{ flex: 1 }}>
+                        {publicKey || "Generando..."}
+                      </div>
+                      <button
+                        className="btn btn-secondary"
                         style={{ padding: "8px 12px" }}
                         onClick={() => copyToClipboard(publicKey)}
                         title="Copiar clave pública"
                       >
-                        {copiedKey ? <Check size={14} style={{ color: "#10b981" }} /> : <Copy size={14} />}
+                        {copiedKey ? (
+                          <Check size={14} style={{ color: "#10b981" }} />
+                        ) : (
+                          <Copy size={14} />
+                        )}
                       </button>
                     </div>
                     <div className="btn-group" style={{ marginTop: "8px" }}>
                       <button className="btn btn-secondary" onClick={exportKey} title="Exportar archivo .key">
                         <Download size={14} /> Exportar .key
                       </button>
-                      <label className="btn btn-secondary" style={{ cursor: "pointer" }} title="Importar archivo .key">
+                      <label
+                        className="btn btn-secondary"
+                        style={{ cursor: "pointer" }}
+                        title="Importar archivo .key"
+                      >
                         <Upload size={14} /> Importar .key
                         <input type="file" accept=".key" onChange={importKey} style={{ display: "none" }} />
                       </label>
-                      <button className="btn btn-danger" onClick={generateNewIdentity} title="Generar nueva identidad">
+                      <button
+                        className="btn btn-danger"
+                        onClick={generateNewIdentity}
+                        title="Generar nueva identidad"
+                      >
                         <RefreshCw size={14} /> Regenerar Claves
                       </button>
                     </div>
@@ -2013,70 +1706,123 @@ export default function App() {
                 </div>
               )}
 
-              {settingsTab === 'storage' && (
+              {settingsTab === "storage" && (
                 <div className="tab-pane">
                   <div className="info-card">
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                      <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--neon-cyan)" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: "6px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          color: "var(--neon-cyan)",
+                        }}
+                      >
                         Almacenamiento Soberano Local-First (Pilar 4)
                       </span>
-                      <span className="badge badge-success" style={{ fontSize: "10px" }}>IndexedDB Activo</span>
+                      <span className="badge badge-success" style={{ fontSize: "10px" }}>
+                        IndexedDB Activo
+                      </span>
                     </div>
-                    <p style={{ fontSize: "12px", color: "var(--text-muted)", lineHeight: "1.4", margin: 0 }}>
-                      Tus graffitis descubiertos, huellas creadas y contactos de confianza se persisten en la base de datos local <code>handshake_db</code> de forma soberana e independiente de servidores.
+                    <p
+                      style={{
+                        fontSize: "12px",
+                        color: "var(--text-muted)",
+                        lineHeight: "1.4",
+                        margin: 0,
+                      }}
+                    >
+                      Tus graffitis descubiertos, huellas creadas y contactos de confianza se
+                      persisten en la base de datos local <code>handshake_db</code> de forma soberana
+                      e independiente de servidores.
                     </p>
-                    <div style={{ display: "flex", gap: "12px", fontSize: "11px", color: "var(--text-secondary)", marginTop: "4px" }}>
-                      <span>Mensajes totales: <strong style={{ color: "var(--text-primary)" }}>{allGraffitis.length}</strong></span>
-                      <span>Fijados: <strong style={{ color: "var(--text-primary)" }}>{pinnedSignatures.size}</strong></span>
-                      <span>Contactos: <strong style={{ color: "var(--text-primary)" }}>{trustedAuthors.length}</strong></span>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "12px",
+                        fontSize: "11px",
+                        color: "var(--text-secondary)",
+                        marginTop: "4px",
+                      }}
+                    >
+                      <span>
+                        Mensajes totales:{" "}
+                        <strong style={{ color: "var(--text-primary)" }}>
+                          {allGraffitis.length}
+                        </strong>
+                      </span>
+                      <span>
+                        Fijados:{" "}
+                        <strong style={{ color: "var(--text-primary)" }}>
+                          {pinnedSignatures.size}
+                        </strong>
+                      </span>
+                      <span>
+                        Contactos:{" "}
+                        <strong style={{ color: "var(--text-primary)" }}>
+                          {trustedAuthors.length}
+                        </strong>
+                      </span>
                     </div>
                   </div>
 
                   <div className="info-card" style={{ marginTop: "12px" }}>
                     <div className="folder-header">
-                      <span className="folder-path">{folderName ? `Carpeta activa: ${folderName}` : "Sin carpeta vinculada"}</span>
+                      <span className="folder-path">
+                        {folderName ? `Carpeta activa: ${folderName}` : "Sin carpeta vinculada"}
+                      </span>
                       {folderName && (
                         <span className="badge badge-success">
-                          <span className="status-dot active"></span> Seeding Local Activo
+                          <span className="status-dot active" /> Seeding Local Activo
                         </span>
                       )}
                     </div>
                     <button className="btn btn-primary" onClick={selectLocalFolder}>
-                      <Folder size={16} /> {folderName ? "Cambiar Carpeta de Seeding" : "Vincular Carpeta de Disco Local"}
+                      <Folder size={16} />{" "}
+                      {folderName
+                        ? "Cambiar Carpeta de Seeding"
+                        : "Vincular Carpeta de Disco Local"}
                     </button>
-                    <p style={{ fontSize: "12px", color: "var(--text-muted)", lineHeight: "1.4" }}>
-                      Opcional: Guarda tus graffitis en archivos .msg directamente en tu sistema de archivos para respaldo físico externo.
+                    <p
+                      style={{
+                        fontSize: "12px",
+                        color: "var(--text-muted)",
+                        lineHeight: "1.4",
+                      }}
+                    >
+                      Opcional: Guarda tus graffitis en archivos .msg directamente en tu sistema de
+                      archivos para respaldo físico externo.
                     </p>
-                    {localGraffitis.length > 0 && (
-                      <div style={{ marginTop: "10px" }}>
-                        <span style={{ fontSize: "11px", color: "#9ca3af", fontWeight: 600 }}>TUS GRAFFITIS LOCALES ({localGraffitis.length})</span>
-                        <div className="graffiti-list" style={{ maxHeight: "150px", overflowY: "auto", marginTop: "6px" }}>
-                          {localGraffitis.map((g, i) => (
-                            <div key={i} className="graffiti-item">
-                              <div className="graffiti-content">"{g.content.text}"</div>
-                              <div className="graffiti-meta">
-                                <span>{getMessageGeohash(g).substring(0, 7)}</span>
-                                <span>{new Date(getMessageTimestamp(g) * 1000).toLocaleDateString()}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
 
-              {settingsTab === 'network' && (
+              {settingsTab === "network" && (
                 <div className="tab-pane">
                   <div className="info-card" style={{ gap: "8px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: "12px",
+                      }}
+                    >
                       <span>Vecinos P2P en zona:</span>
-                      <span style={{ fontWeight: 600, color: "var(--accent)" }}>{connectedPeers.length} peers conectados</span>
+                      <span style={{ fontWeight: 600, color: "var(--accent)" }}>
+                        {connectedPeers.length} peers conectados
+                      </span>
                     </div>
                     <div className="logs-container" style={{ height: "200px" }}>
                       {logs.length === 0 ? (
-                        <div className="log-entry" style={{ color: "#6b7280" }}>Consola de actividad P2P lista...</div>
+                        <div className="log-entry" style={{ color: "#6b7280" }}>
+                          Consola de actividad P2P lista...
+                        </div>
                       ) : (
                         logs.map((log, i) => (
                           <div key={i} className={`log-entry log-${log.type}`}>
@@ -2096,56 +1842,155 @@ export default function App() {
       {/* Help Modal */}
       {isHelpOpen && (
         <div className="modal-overlay" onClick={() => setIsHelpOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ width: "560px", maxWidth: "95vw" }}>
-            <h2 style={{ marginBottom: "14px", display: "flex", alignItems: "center", gap: "10px", fontSize: "20px" }}>
+          <div
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: "560px", maxWidth: "95vw" }}
+          >
+            <h2
+              style={{
+                marginBottom: "14px",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                fontSize: "20px",
+              }}
+            >
               🤝 Acerca de Handshake
             </h2>
-            <p style={{ color: "var(--text-secondary)", marginBottom: "14px", lineHeight: "1.6", fontSize: "14px" }}>
-              <strong>Handshake</strong> es un protocolo de <strong>memoria digital espacio-temporal y graffitis soberanos</strong> donde el territorio y el tiempo son los protagonistas.
+            <p
+              style={{
+                color: "var(--text-secondary)",
+                marginBottom: "14px",
+                lineHeight: "1.6",
+                fontSize: "14px",
+              }}
+            >
+              <strong>Handshake</strong> es un protocolo de{" "}
+              <strong>memoria digital espacio-temporal y graffitis soberanos</strong> donde el
+              territorio y el tiempo son los protagonistas.
             </p>
-            
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "18px" }}>
-              <div style={{ background: "rgba(0, 0, 0, 0.25)", padding: "10px 14px", borderRadius: "8px", borderLeft: "3px solid var(--accent)" }}>
-                <strong style={{ color: "var(--text-primary)", fontSize: "13px" }}>📍 El Territorio y el Tiempo como Protagonistas</strong>
-                <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "3px", lineHeight: "1.4" }}>
-                  Sin cuentas, perfiles ni algoritmos de retención. Los mensajes son huellas ancladas a coordenadas físicas y a momentos temporales elegidos por el autor (presente, pasado o futuro).
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+                marginBottom: "18px",
+              }}
+            >
+              <div
+                style={{
+                  background: "rgba(0, 0, 0, 0.25)",
+                  padding: "10px 14px",
+                  borderRadius: "8px",
+                  borderLeft: "3px solid var(--accent)",
+                }}
+              >
+                <strong style={{ color: "var(--text-primary)", fontSize: "13px" }}>
+                  📍 El Territorio y el Tiempo como Protagonistas
+                </strong>
+                <p
+                  style={{
+                    fontSize: "12px",
+                    color: "var(--text-secondary)",
+                    marginTop: "3px",
+                    lineHeight: "1.4",
+                  }}
+                >
+                  Sin cuentas, perfiles ni algoritmos de retención. Los mensajes son huellas ancladas
+                  a coordenadas físicas y a momentos temporales elegidos por el autor (presente,
+                  pasado o futuro).
                 </p>
               </div>
 
-              <div style={{ background: "rgba(0, 0, 0, 0.25)", padding: "10px 14px", borderRadius: "8px", borderLeft: "3px solid #10b981" }}>
-                <strong style={{ color: "var(--text-primary)", fontSize: "13px" }}>🔏 Autenticidad e Integridad Criptográfica</strong>
-                <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "3px", lineHeight: "1.4" }}>
-                  Cada graffiti es texto plano firmado con claves matemáticas Ed25519. Cualquier persona puede leerlo en el mapa, pero nadie puede falsificar tu autoría ni alterar una sola coma.
+              <div
+                style={{
+                  background: "rgba(0, 0, 0, 0.25)",
+                  padding: "10px 14px",
+                  borderRadius: "8px",
+                  borderLeft: "3px solid #10b981",
+                }}
+              >
+                <strong style={{ color: "var(--text-primary)", fontSize: "13px" }}>
+                  🔏 Autenticidad e Integridad Criptográfica
+                </strong>
+                <p
+                  style={{
+                    fontSize: "12px",
+                    color: "var(--text-secondary)",
+                    marginTop: "3px",
+                    lineHeight: "1.4",
+                  }}
+                >
+                  Cada graffiti es texto plano firmado con claves matemáticas Ed25519. Cualquier
+                  persona puede leerlo en el mapa, pero nadie puede falsificar tu autoría ni alterar
+                  una sola coma.
                 </p>
               </div>
 
-              <div style={{ background: "rgba(0, 0, 0, 0.25)", padding: "10px 14px", borderRadius: "8px", borderLeft: "3px solid #f59e0b" }}>
-                <strong style={{ color: "var(--text-primary)", fontSize: "13px" }}>⚡ Sincronización P2P Soberana</strong>
-                <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "3px", lineHeight: "1.4" }}>
-                  Los datos viajan de navegador a navegador vía WebRTC sin un servidor central que almacene tus mensajes. Cada nodo es custodio de la memoria digital local.
+              <div
+                style={{
+                  background: "rgba(0, 0, 0, 0.25)",
+                  padding: "10px 14px",
+                  borderRadius: "8px",
+                  borderLeft: "3px solid #f59e0b",
+                }}
+              >
+                <strong style={{ color: "var(--text-primary)", fontSize: "13px" }}>
+                  ⚡ Sincronización P2P Soberana
+                </strong>
+                <p
+                  style={{
+                    fontSize: "12px",
+                    color: "var(--text-secondary)",
+                    marginTop: "3px",
+                    lineHeight: "1.4",
+                  }}
+                >
+                  Los datos viajan de navegador a navegador vía WebRTC sin un servidor central que
+                  almacene tus mensajes. Cada nodo es custodio de la memoria digital local.
                 </p>
               </div>
 
-              <div style={{ background: "rgba(0, 0, 0, 0.25)", padding: "10px 14px", borderRadius: "8px", borderLeft: "3px solid #a855f7" }}>
-                <strong style={{ color: "var(--text-primary)", fontSize: "13px" }}>🤝 El Handshake Presencial</strong>
-                <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "3px", lineHeight: "1.4" }}>
-                  Al encontrarte cara a cara con alguien y escanear su clave pública, tu mapa expande tu radio de visibilidad a 1 km y destaca visualmente sus huellas con un halo de confianza.
+              <div
+                style={{
+                  background: "rgba(0, 0, 0, 0.25)",
+                  padding: "10px 14px",
+                  borderRadius: "8px",
+                  borderLeft: "3px solid #a855f7",
+                }}
+              >
+                <strong style={{ color: "var(--text-primary)", fontSize: "13px" }}>
+                  🤝 El Handshake Presencial
+                </strong>
+                <p
+                  style={{
+                    fontSize: "12px",
+                    color: "var(--text-secondary)",
+                    marginTop: "3px",
+                    lineHeight: "1.4",
+                  }}
+                >
+                  Al encontrarte cara a cara con alguien y escanear su clave pública, tu mapa expande
+                  tu radio de visibilidad a 1 km y destaca visualmente sus huellas con un halo de
+                  confianza.
                 </p>
               </div>
             </div>
 
             <div style={{ display: "flex", gap: "10px" }}>
-              <a 
-                href="https://github.com/cacrespo/handshake" 
-                target="_blank" 
+              <a
+                href="https://github.com/cacrespo/handshake"
+                target="_blank"
                 rel="noopener noreferrer"
                 className="btn btn-secondary"
                 style={{ flex: 1, textDecoration: "none", justifyContent: "center" }}
               >
                 Código en GitHub
               </a>
-              <button 
-                className="btn btn-primary" 
+              <button
+                className="btn btn-primary"
                 style={{ flex: 1 }}
                 onClick={() => setIsHelpOpen(false)}
               >

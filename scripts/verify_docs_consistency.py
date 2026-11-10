@@ -77,12 +77,15 @@ def check_markdown_links(repo_root: Path) -> list[str]:
     errors: list[str] = []
     docs_dir = repo_root / "docs"
     readme = repo_root / "README.md"
+    web_readme = repo_root / "web" / "README.md"
 
     md_files: list[Path] = []
     if docs_dir.exists():
         md_files.extend(docs_dir.rglob("*.md"))
     if readme.exists():
         md_files.append(readme)
+    if web_readme.exists():
+        md_files.append(web_readme)
 
     # Cache extracted anchors per file
     file_anchors_cache: dict[Path, set[str]] = {}
@@ -342,6 +345,7 @@ def check_architectural_invariants(repo_root: Path) -> list[str]:
     invariants_file = repo_root / "docs" / "architecture-invariants.md"
     protocol_file = repo_root / "docs" / "protocol.md"
     readme_file = repo_root / "README.md"
+    web_readme_file = repo_root / "web" / "README.md"
 
     if not invariants_file.exists():
         return ["Missing docs/architecture-invariants.md! Architectural invariants must be formalized."]
@@ -349,6 +353,7 @@ def check_architectural_invariants(repo_root: Path) -> list[str]:
     inv_text = invariants_file.read_text(encoding="utf-8")
     proto_text = protocol_file.read_text(encoding="utf-8") if protocol_file.exists() else ""
     readme_text = readme_file.read_text(encoding="utf-8") if readme_file.exists() else ""
+    web_text = web_readme_file.read_text(encoding="utf-8") if web_readme_file.exists() else ""
 
     # 1. Check all 5 core invariants in architecture-invariants.md
     core_invariants = {
@@ -416,11 +421,15 @@ def check_architectural_invariants(repo_root: Path) -> list[str]:
         ),
     ]
 
-    for doc_name, text in [
+    docs_to_check = [
         ("README.md", readme_text),
         ("docs/protocol.md", proto_text),
         ("docs/architecture-invariants.md", inv_text),
-    ]:
+    ]
+    if web_readme_file.exists():
+        docs_to_check.append(("web/README.md", web_text))
+
+    for doc_name, text in docs_to_check:
         for pattern, msg in drift_patterns:
             matches = find_unnegated_patterns(text, pattern)
             if matches:

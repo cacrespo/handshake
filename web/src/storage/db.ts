@@ -282,6 +282,36 @@ export async function getMessagesByGeohash(prefix: string): Promise<HandshakeMes
 }
 
 /**
+ * Retrieves messages filtered by timestamp range using the timestamp index.
+ */
+export async function getMessagesByTimeRange(minTimestamp?: number, maxTimestamp?: number): Promise<HandshakeMessage[]> {
+  const db = await initDB(currentDbName);
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORE_MESSAGES], "readonly");
+    const store = tx.objectStore(STORE_MESSAGES);
+    const index = store.index("timestamp");
+
+    let req: IDBRequest<any[]>;
+    if (minTimestamp !== undefined && maxTimestamp !== undefined) {
+      const range = IDBKeyRange.bound(minTimestamp, maxTimestamp, false, false);
+      req = index.getAll(range);
+    } else if (minTimestamp !== undefined) {
+      const range = IDBKeyRange.lowerBound(minTimestamp, false);
+      req = index.getAll(range);
+    } else if (maxTimestamp !== undefined) {
+      const range = IDBKeyRange.upperBound(maxTimestamp, false);
+      req = index.getAll(range);
+    } else {
+      req = index.getAll();
+    }
+
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error || new Error("Failed to query messages by timestamp range"));
+  });
+}
+
+/**
  * Retrieves all messages stored locally in IndexedDB.
  */
 export async function getAllMessages(): Promise<HandshakeMessage[]> {

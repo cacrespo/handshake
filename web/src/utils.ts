@@ -234,11 +234,11 @@ export function canonicalStringify(obj: any): string {
 export const MAX_MESSAGE_SIZE_BYTES = 64 * 1024; // 64 KB
 
 export function getMessageTimestamp(msg: any): number {
-  return msg?.anchor?.timestamp ?? 0;
+  return msg?.anchor?.timestamp ?? (msg?.header?.timestamp ?? (msg?.timestamp ?? 0));
 }
 
 export function getMessageGeohash(msg: any): string {
-  return msg?.anchor?.geohash ?? "";
+  return msg?.anchor?.geohash || msg?.location?.geohash || msg?.geohash || "";
 }
 
 export function getMessageCoordinates(msg: any): { lat: number; lon: number } | null {
